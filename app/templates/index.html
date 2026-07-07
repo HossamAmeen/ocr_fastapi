@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Proforma Generator</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <div class="page">
+    <nav class="site-nav">
+      <a href="/" class="active">Proforma</a>
+      <a href="/soe">SOE Time Log</a>
+      <a href="/job-over">Job Over</a>
+    </nav>
+
+    <header class="hero">
+      <div class="hero-text">
+        <p class="eyebrow">OCR + Excel</p>
+        <h1>Proforma Generator</h1>
+        <p class="subtitle">
+          Upload a purchase order PDF and an Excel template. We extract line items
+          and write the Proforma sheet automatically.
+        </p>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="card upload-card">
+        <h2>Upload files</h2>
+        <form id="proforma-form">
+          <label class="field">
+            <span>Purchase Order PDF</span>
+            <input type="file" id="pdf-file" name="pdf" accept=".pdf" required />
+          </label>
+
+          <label class="field">
+            <span>Excel Template (.xlsm)</span>
+            <input type="file" id="excel-file" name="excel" accept=".xlsm,.xlsx" required />
+          </label>
+
+          <button type="submit" id="submit-btn">Generate Proforma</button>
+        </form>
+
+        <div id="status" class="status hidden"></div>
+      </section>
+
+      <section class="card results-card hidden" id="results-card">
+        <div class="results-header">
+          <h2>Extracted items</h2>
+          <a id="download-link" class="download-btn" href="#" download>Download Excel</a>
+        </div>
+
+        <div class="summary" id="summary"></div>
+
+        <div class="table-wrap">
+          <table id="items-table">
+            <thead>
+              <tr>
+                <th>S.No.</th>
+                <th>Description</th>
+                <th>Per Day Rate $</th>
+                <th># Days</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
