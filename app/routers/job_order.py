@@ -7,20 +7,20 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from app.config import OUTPUT_DIR, UPLOAD_DIR
-from app.schemas.job_over import JobOverLine, JobOverResponse
-from app.services.job_over_service import process_job_over
+from app.schemas.job_order import JobOrderLine, JobOrderResponse
+from app.services.job_order_service import process_job_order
 
-router = APIRouter(prefix="/api/job-over", tags=["job-over"])
+router = APIRouter(prefix="/api/job-order", tags=["job-order"])
 
 _ALLOWED_SOURCES = {"auto", "1c", "running"}
 
 
-@router.post("/generate", response_model=JobOverResponse)
-async def generate_job_over(
+@router.post("/generate", response_model=JobOrderResponse)
+async def generate_job_order(
     pdf: UploadFile = File(..., description="Completion program PDF"),
     excel: UploadFile = File(..., description="Excel template (.xlsm)"),
     source: str = Form(default="auto", description="Template: auto, 1c, or running"),
-) -> JobOverResponse:
+) -> JobOrderResponse:
     if not pdf.filename or not pdf.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="PDF file is required.")
     if not excel.filename or not excel.filename.lower().endswith((".xlsm", ".xlsx")):
@@ -40,7 +40,7 @@ async def generate_job_over(
     excel_path.write_bytes(await excel.read())
 
     try:
-        data, lines, output_path, appended_rows = process_job_over(
+        data, lines, output_path, appended_rows = process_job_order(
             pdf_path,
             excel_path,
             source=source,
@@ -60,18 +60,18 @@ async def generate_job_over(
         else "application/vnd.ms-excel.sheet.macroEnabled.12"
     )
 
-    return JobOverResponse(
+    return JobOrderResponse(
         section_title=str(data.get("section_title") or ""),
         source=str(data.get("source") or source),
-        lines=[JobOverLine(**line) for line in lines],
+        lines=[JobOrderLine(**line) for line in lines],
         line_count=appended_rows,
-        download_url=f"/api/job-over/download/{filename}",
+        download_url=f"/api/job-order/download/{filename}",
         filename=filename,
     )
 
 
 @router.get("/download/{filename}")
-async def download_job_over(filename: str) -> FileResponse:
+async def download_job_order(filename: str) -> FileResponse:
     safe_name = Path(filename).name
     file_path = OUTPUT_DIR / safe_name
 

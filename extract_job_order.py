@@ -1,4 +1,4 @@
-"""Extract job-over procedure text from completion program PDFs."""
+"""Extract job order procedure text from completion program PDFs."""
 
 from __future__ import annotations
 
@@ -172,19 +172,19 @@ def _extract_section_lines(
     return _merge_wrapped_lines(content_lines, numbered_steps=numbered_steps)
 
 
-def extract_job_over_procedure(pdf_path: str | Path) -> dict[str, Any]:
+def extract_job_order_procedure(pdf_path: str | Path) -> dict[str, Any]:
     """Extract the 1-C running procedure through the X-Mast Tree step, line by line."""
     pdf_path = Path(pdf_path)
     text = _extract_raw_text(pdf_path)
 
     start = _find_start_1c(text)
     if start < 0:
-        return _build_result(pdf_path, "job_over_1c", [])
+        return _build_result(pdf_path, "job_order_1c", [])
 
     end = _find_end_1c(text, start)
     section = text[start:end].strip()
     merged_lines = _extract_section_lines(section, merge_wrapped=False)
-    return _build_result(pdf_path, "job_over_1c", merged_lines)
+    return _build_result(pdf_path, "job_order_1c", merged_lines)
 
 
 def _split_running_completion_title(lines: list[str]) -> list[str]:
@@ -220,8 +220,8 @@ def extract_running_completion(pdf_path: str | Path) -> dict[str, Any]:
     return _build_result(pdf_path, "running_completion", [])
 
 
-def detect_job_over_source(text: str) -> str:
-    """Detect which job-over template is present in the PDF text."""
+def detect_job_order_source(text: str) -> str:
+    """Detect which job order template is present in the PDF text."""
     if _find_start_1c(text) >= 0:
         return "1c"
     if RUNNING_PROCEDURE_START.search(text):
@@ -234,21 +234,21 @@ def detect_job_over_source(text: str) -> str:
     return "unknown"
 
 
-def extract_job_over_data(
+def extract_job_order_data(
     pdf_path: str | Path,
     source: str = "auto",
 ) -> dict[str, Any]:
-    """Extract job-over data using the requested or detected template."""
+    """Extract job order data using the requested or detected template."""
     pdf_path = Path(pdf_path)
     text = _extract_raw_text(pdf_path)
 
-    selected = source if source != "auto" else detect_job_over_source(text)
+    selected = source if source != "auto" else detect_job_order_source(text)
     if selected == "1c":
-        return extract_job_over_procedure(pdf_path)
+        return extract_job_order_procedure(pdf_path)
     if selected == "running":
         return extract_running_completion(pdf_path)
 
     data = extract_running_completion(pdf_path)
     if data["lines"]:
         return data
-    return extract_job_over_procedure(pdf_path)
+    return extract_job_order_procedure(pdf_path)

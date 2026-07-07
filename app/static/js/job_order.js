@@ -1,4 +1,4 @@
-const form = document.getElementById("job-over-form");
+const form = document.getElementById("job-order-form");
 const submitBtn = document.getElementById("submit-btn");
 const statusEl = document.getElementById("status");
 const resultsCard = document.getElementById("results-card");
@@ -88,7 +88,7 @@ form.addEventListener("submit", async (event) => {
   setStatus("Extracting procedure and writing Excel...", "info");
 
   try {
-    const response = await fetch("/api/job-over/generate", {
+    const response = await fetch("/api/job-order/generate", {
       method: "POST",
       body: formData,
     });

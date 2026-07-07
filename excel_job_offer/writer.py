@@ -1,4 +1,4 @@
-"""Write extracted job-over procedure lines to Excel."""
+"""Write extracted job order procedure lines to Excel."""
 
 from __future__ import annotations
 
@@ -56,13 +56,21 @@ def write_job_offer_table(
 
     write_row = _find_next_row(ws)
     previous_end_row = write_row - 1
+    order_base_row = _find_order_base_row(ws, write_row)
     ws.insert_rows(write_row, amount=len(lines))
 
     for index, line in enumerate(lines):
         row = write_row + index
         text = str(line.get("text", "")).strip()
-        kind, col_a, col_c = _prepare_row_values(text, source)
-        _write_formatted_row(ws, row, kind, col_a, col_c)
+        kind, col_c = _prepare_row_values(text, source)
+        _write_formatted_row(
+            ws,
+            row,
+            kind,
+            col_c,
+            order_base_row=order_base_row,
+            numbered=kind == "step",
+        )
 
     last_row = write_row + len(lines) - 1
     _extend_procedure_box(ws, write_row, last_row, previous_end_row)
@@ -80,29 +88,29 @@ def _get_job_order_sheet(wb) -> Worksheet:
     return wb[JOB_ORDER_SHEET]
 
 
-def _prepare_row_values(text: str, source: str) -> tuple[str, Any, str]:
+def _prepare_row_values(text: str, source: str) -> tuple[str, str]:
     if text.startswith("Running Completion") and "DS," not in text:
-        return "section", None, _format_text(text, source)
+        return "section", _format_text(text, source)
 
     if text.startswith("DS,"):
-        return "intro", None, _format_text(text, source)
+        return "intro", _format_text(text, source)
 
     if text.startswith(("!", "~")):
         body = text.lstrip("!~ ").strip()
-        return "note", None, _format_text(f"NOTE: {body}", source)
+        return "note", _format_text(f"NOTE: {body}", source)
 
     if text.startswith(("*", "-", "•", "●", "o ")):
-        return "bullet", None, _format_bullet(text, source)
+        return "bullet", _format_bullet(text, source)
 
-    step_number, body = _split_numbered_line(text)
-    if step_number is not None:
-        return "step", step_number, _format_text(body, source)
+    _, body = _split_numbered_line(text)
+    if body != text:
+        return "step", _format_text(body, source)
 
-    return "text", None, _format_text(text, source)
+    return "text", _format_text(text, source)
 
 
 def _format_text(text: str, source: str) -> str:
-    if source in ("job_over_1c", "running_completion_summary"):
+    if source in ("job_order_1c", "running_completion_summary"):
         return text.upper()
     return text
 
@@ -123,26 +131,36 @@ def _split_numbered_line(text: str) -> tuple[str | None, str]:
         return None, text
 
     number, body = match.group(1), match.group(2).strip()
-    if "." in number:
-        return number, body
-    if body.lower().startswith("running"):
+    if "." not in number and body.lower().startswith("running"):
         return None, text
     return number, body
+
+
+def _step_order_formula(first_numbered_row: int, row: int) -> str:
+    """Number only step rows; skips bullets/sections and reorders when rows are deleted."""
+    if row <= first_numbered_row:
+        return "=1"
+    return f'=COUNTIF($A${first_numbered_row}:A{row - 1},">0")+1'
 
 
 def _write_formatted_row(
     ws: Worksheet,
     row: int,
     kind: str,
-    col_a: Any,
     col_c: str,
+    *,
+    order_base_row: int,
+    numbered: bool,
 ) -> None:
     template_row = _STYLE_TEMPLATE_ROWS.get(kind, _STYLE_TEMPLATE_ROWS["text"])
     _clear_row_merges(ws, row)
     _apply_row_background(ws, row)
     _copy_row_layout(ws, template_row, row)
 
-    ws.cell(row, NUMBER_COLUMN).value = col_a
+    if numbered:
+        ws.cell(row, NUMBER_COLUMN).value = _step_order_formula(order_base_row + 1, row)
+    else:
+        ws.cell(row, NUMBER_COLUMN).value = None
     ws.cell(row, TEXT_COLUMN).value = col_c
 
     if kind == "section":
@@ -294,6 +312,18 @@ def _find_next_row(ws: Worksheet) -> int:
         if any(_cell_value(ws, row, col) for col in range(1, 7)):
             last_row = row
     return last_row + 1
+
+
+def _find_order_base_row(ws: Worksheet, write_row: int) -> int:
+    """Row offset for =ROW()-offset so numbering continues from the procedure block."""
+    first_row = write_row
+    for row in range(write_row - 1, 0, -1):
+        if any(_cell_value(ws, row, col) for col in range(1, 7)):
+            first_row = row
+            continue
+        if first_row < write_row:
+            break
+    return first_row - 1
 
 
 def _cell_value(ws: Worksheet, row: int, col: int) -> Any:
