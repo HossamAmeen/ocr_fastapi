@@ -42,10 +42,15 @@ def _pdf_summary(data: dict, filename: str, row_count: int, skipped: bool) -> di
     }
 
 
-def process_soe(pdf_paths: list[Path], template_path: Path) -> tuple[list[dict], list[dict], Path, int]:
+def process_soe(
+    pdf_entries: list[tuple[Path, str]],
+    template_path: Path,
+) -> tuple[list[dict], list[dict], Path, int]:
     """Extract time logs from multiple PDFs and append them into one Excel workbook."""
-    if not pdf_paths:
+    if not pdf_entries:
         raise ValueError("At least one PDF is required.")
+
+    pdf_entries = sorted(pdf_entries, key=lambda entry: entry[1].lower())
 
     output_name = f"soe_{uuid.uuid4().hex[:8]}.xlsm"
     output_path = OUTPUT_DIR / output_name
@@ -55,11 +60,11 @@ def process_soe(pdf_paths: list[Path], template_path: Path) -> tuple[list[dict],
     all_rows: list[dict] = []
     total_appended = 0
 
-    for pdf_path in pdf_paths:
+    for pdf_path, display_name in pdf_entries:
         data = extract_soe_data(pdf_path)
         rows = soe_data_to_rows(data)
         if not rows:
-            pdf_summaries.append(_pdf_summary(data, pdf_path.name, 0, True))
+            pdf_summaries.append(_pdf_summary(data, display_name, 0, True))
             continue
 
         _, appended = write_soe_table(
@@ -69,7 +74,7 @@ def process_soe(pdf_paths: list[Path], template_path: Path) -> tuple[list[dict],
             template_path=template_path,
         )
         total_appended += appended
-        pdf_summaries.append(_pdf_summary(data, pdf_path.name, appended, False))
+        pdf_summaries.append(_pdf_summary(data, display_name, appended, False))
         for row in rows:
             all_rows.append(
                 {

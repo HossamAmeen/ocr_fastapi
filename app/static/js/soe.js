@@ -7,7 +7,10 @@ const pdfSummaryBody = document.querySelector("#pdf-summary-table tbody");
 const rowsTableBody = document.querySelector("#rows-table tbody");
 const downloadLink = document.getElementById("download-link");
 const pdfFilesInput = document.getElementById("pdf-files");
+const pdfFolderInput = document.getElementById("pdf-folder");
 const pdfFileList = document.getElementById("pdf-file-list");
+
+let selectedPdfFiles = [];
 
 function setStatus(message, type = "info") {
   statusEl.textContent = message;
@@ -19,16 +22,44 @@ function clearStatus() {
   statusEl.classList.add("hidden");
 }
 
+function displayName(file) {
+  return file.webkitRelativePath || file.name;
+}
+
+function collectPdfFiles(fileList) {
+  return Array.from(fileList || [])
+    .filter((file) => file.name.toLowerCase().endsWith(".pdf"))
+    .sort((left, right) =>
+      displayName(left).localeCompare(displayName(right), undefined, {
+        numeric: true,
+        sensitivity: "base",
+      })
+    );
+}
+
 function renderSelectedFiles() {
-  const files = Array.from(pdfFilesInput.files || []);
-  if (!files.length) {
+  if (!selectedPdfFiles.length) {
     pdfFileList.classList.add("hidden");
     pdfFileList.innerHTML = "";
     return;
   }
 
-  pdfFileList.innerHTML = files.map((file) => `<li>${file.name}</li>`).join("");
+  pdfFileList.innerHTML = selectedPdfFiles
+    .map((file) => `<li>${displayName(file)}</li>`)
+    .join("");
   pdfFileList.classList.remove("hidden");
+}
+
+function setSelectedPdfFiles(files, sourceInput) {
+  selectedPdfFiles = collectPdfFiles(files);
+
+  if (sourceInput === pdfFilesInput) {
+    pdfFolderInput.value = "";
+  } else {
+    pdfFilesInput.value = "";
+  }
+
+  renderSelectedFiles();
 }
 
 function formatSource(source) {
@@ -102,27 +133,44 @@ function renderResults(data) {
   resultsCard.classList.remove("hidden");
 }
 
-pdfFilesInput.addEventListener("change", renderSelectedFiles);
+pdfFilesInput.addEventListener("change", () => {
+  setSelectedPdfFiles(pdfFilesInput.files, pdfFilesInput);
+});
+
+pdfFolderInput.addEventListener("change", () => {
+  const pdfFiles = collectPdfFiles(pdfFolderInput.files);
+  if (pdfFolderInput.files?.length && !pdfFiles.length) {
+    selectedPdfFiles = [];
+    pdfFolderInput.value = "";
+    renderSelectedFiles();
+    setStatus("The selected folder does not contain any PDF files.", "error");
+    return;
+  }
+  setSelectedPdfFiles(pdfFolderInput.files, pdfFolderInput);
+  clearStatus();
+});
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   clearStatus();
 
-  const pdfFiles = Array.from(pdfFilesInput.files || []);
   const excelFile = document.getElementById("excel-file").files[0];
 
-  if (!pdfFiles.length || !excelFile) {
-    setStatus("Please select at least one PDF and an Excel template.", "error");
+  if (!selectedPdfFiles.length || !excelFile) {
+    setStatus("Please select at least one PDF (or a folder of PDFs) and an Excel template.", "error");
     return;
   }
 
   const formData = new FormData();
-  pdfFiles.forEach((file) => formData.append("pdfs", file));
+  selectedPdfFiles.forEach((file) => {
+    formData.append("pdfs", file);
+    formData.append("pdf_names", displayName(file));
+  });
   formData.append("excel", excelFile);
 
   submitBtn.disabled = true;
   submitBtn.textContent = "Processing...";
-  setStatus(`Extracting ${pdfFiles.length} PDF(s) and writing Excel...`, "info");
+  setStatus(`Extracting ${selectedPdfFiles.length} PDF(s) and writing Excel...`, "info");
 
   try {
     const response = await fetch("/api/soe/generate", {

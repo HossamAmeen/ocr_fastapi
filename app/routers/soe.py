@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from app.config import OUTPUT_DIR, UPLOAD_DIR
@@ -16,6 +16,7 @@ router = APIRouter(prefix="/api/soe", tags=["soe"])
 @router.post("/generate", response_model=SoeResponse)
 async def generate_soe(
     pdfs: list[UploadFile] = File(..., description="SOE daily operations report PDFs"),
+    pdf_names: list[str] = Form(default=[], description="Display names for uploaded PDFs"),
     excel: UploadFile = File(..., description="Excel template (.xlsm)"),
 ) -> SoeResponse:
     if not pdfs:
@@ -24,7 +25,7 @@ async def generate_soe(
         raise HTTPException(status_code=400, detail="Excel template (.xlsm) is required.")
 
     job_id = uuid.uuid4().hex[:12]
-    pdf_paths: list[Path] = []
+    pdf_entries: list[tuple[Path, str]] = []
     excel_path = UPLOAD_DIR / f"{job_id}.xlsm"
 
     try:
@@ -34,12 +35,17 @@ async def generate_soe(
                     status_code=400,
                     detail=f"Invalid PDF file: {pdf.filename or 'unnamed'}",
                 )
+            display_name = (
+                pdf_names[index]
+                if index < len(pdf_names) and pdf_names[index].strip()
+                else (pdf.filename or f"upload_{index + 1}.pdf")
+            )
             pdf_path = UPLOAD_DIR / f"{job_id}_{index}.pdf"
             pdf_path.write_bytes(await pdf.read())
-            pdf_paths.append(pdf_path)
+            pdf_entries.append((pdf_path, display_name))
 
         excel_path.write_bytes(await excel.read())
-        pdf_summaries, rows, output_path, row_count = process_soe(pdf_paths, excel_path)
+        pdf_summaries, rows, output_path, row_count = process_soe(pdf_entries, excel_path)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except HTTPException:
@@ -47,7 +53,7 @@ async def generate_soe(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Processing failed: {exc}") from exc
     finally:
-        for pdf_path in pdf_paths:
+        for pdf_path, _ in pdf_entries:
             pdf_path.unlink(missing_ok=True)
         excel_path.unlink(missing_ok=True)
 
