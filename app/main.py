@@ -5,7 +5,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.routers import job_order, proforma, soe
+from app.routers import generate, job_order, proforma, soe
 
 APP_DIR = Path(__file__).resolve().parent
 
@@ -18,6 +18,7 @@ app = FastAPI(
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
 
+app.include_router(generate.router)
 app.include_router(proforma.router)
 app.include_router(soe.router)
 app.include_router(job_order.router)
@@ -26,6 +27,11 @@ app.include_router(job_order.router)
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "index.html")
+
+
+@app.get("/proforma", response_class=HTMLResponse)
+async def proforma_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(request, "proforma.html")
 
 
 @app.get("/soe", response_class=HTMLResponse)

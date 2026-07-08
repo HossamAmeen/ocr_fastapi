@@ -97,6 +97,101 @@ body {
 
 .file-button:hover {
   border-color: var(--accent);
+  background: rgba(56, 189, 248, 0.2);
+  transform: translateY(-1px);
+}
+
+.file-button-accent {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.file-button-icon {
+  margin-right: 0.45rem;
+}
+
+.upload-section {
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.upload-section:last-of-type {
+  border-bottom: none;
+}
+
+.upload-section-required {
+  padding-top: 0;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.35rem;
+}
+
+.section-heading h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.badge-required {
+  color: #fecaca;
+  background: rgba(248, 113, 113, 0.15);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+}
+
+.badge-optional {
+  color: var(--muted);
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid var(--border);
+}
+
+.selected-file {
+  margin: 0.5rem 0 0;
+  color: var(--accent);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.submit-hint {
+  margin: 1rem 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.field-inline {
+  margin-top: 0.75rem;
+  margin-bottom: 0;
+}
+
+.field-inline select {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+
+.result-block {
+  margin-top: 1.25rem;
+}
+
+.result-block h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
 }
 
 .field-hint {

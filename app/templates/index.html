@@ -3,13 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Proforma Generator</title>
+  <title>OCR Excel Generator</title>
   <link rel="stylesheet" href="/static/css/style.css" />
 </head>
 <body>
   <div class="page">
     <nav class="site-nav">
-      <a href="/" class="active">Proforma</a>
+      <a href="/" class="active">Combined</a>
+      <a href="/proforma">Proforma</a>
       <a href="/soe">SOE Time Log</a>
       <a href="/job-order">Job Order</a>
     </nav>
@@ -17,10 +18,10 @@
     <header class="hero">
       <div class="hero-text">
         <p class="eyebrow">OCR + Excel</p>
-        <h1>Proforma Generator</h1>
+        <h1>Excel Workbook Generator</h1>
         <p class="subtitle">
-          Upload a purchase order PDF and an Excel template. We extract line items
-          and write the Proforma sheet automatically.
+          Upload one Excel template and any combination of PDFs. Proforma, SOE time logs,
+          and Job Order procedures are extracted and written into the same workbook in one step.
         </p>
       </div>
     </header>
@@ -28,18 +29,86 @@
     <main class="layout">
       <section class="card upload-card">
         <h2>Upload files</h2>
-        <form id="proforma-form">
-          <label class="field">
-            <span>Purchase Order PDF</span>
-            <input type="file" id="pdf-file" name="pdf" accept=".pdf" required />
-          </label>
+        <form id="generator-form">
+          <section class="upload-section upload-section-required">
+            <div class="section-heading">
+              <h3>Excel Template</h3>
+              <span class="badge badge-required">Required</span>
+            </div>
+            <p class="field-hint">One .xlsm template used for all selected sections.</p>
+            <div class="file-actions">
+              <label class="file-button file-button-accent">
+                <span class="file-button-icon">📄</span>
+                Choose Excel template
+                <input type="file" id="excel-file" accept=".xlsm,.xlsx" hidden required />
+              </label>
+            </div>
+            <p id="excel-file-name" class="selected-file hidden"></p>
+          </section>
 
-          <label class="field">
-            <span>Excel Template (.xlsm)</span>
-            <input type="file" id="excel-file" name="excel" accept=".xlsm,.xlsx" required />
-          </label>
+          <section class="upload-section">
+            <div class="section-heading">
+              <h3>Proforma</h3>
+              <span class="badge badge-optional">Optional</span>
+            </div>
+            <p class="field-hint">Purchase order PDF for the Proforma sheet.</p>
+            <div class="file-actions">
+              <label class="file-button">
+                <span class="file-button-icon">📑</span>
+                Choose Proforma PDF
+                <input type="file" id="proforma-pdf" accept=".pdf" hidden />
+              </label>
+            </div>
+            <p id="proforma-file-name" class="selected-file hidden"></p>
+          </section>
 
-          <button type="submit" id="submit-btn">Generate Proforma</button>
+          <section class="upload-section">
+            <div class="section-heading">
+              <h3>SOE Time Log</h3>
+              <span class="badge badge-optional">Optional</span>
+            </div>
+            <p class="field-hint">One or more SOE PDFs, or select a folder of reports.</p>
+            <div class="file-actions">
+              <label class="file-button">
+                <span class="file-button-icon">📚</span>
+                Select PDF files
+                <input type="file" id="soe-pdf-files" accept=".pdf" multiple hidden />
+              </label>
+              <label class="file-button secondary">
+                <span class="file-button-icon">📁</span>
+                Select folder
+                <input type="file" id="soe-pdf-folder" webkitdirectory directory multiple hidden />
+              </label>
+            </div>
+            <ul id="soe-file-list" class="file-list hidden"></ul>
+          </section>
+
+          <section class="upload-section">
+            <div class="section-heading">
+              <h3>Job Order</h3>
+              <span class="badge badge-optional">Optional</span>
+            </div>
+            <p class="field-hint">Completion program PDF for the JOB ORDER sheet.</p>
+            <div class="file-actions">
+              <label class="file-button">
+                <span class="file-button-icon">🛠</span>
+                Choose Job Order PDF
+                <input type="file" id="job-order-pdf" accept=".pdf" hidden />
+              </label>
+            </div>
+            <p id="job-order-file-name" class="selected-file hidden"></p>
+            <label class="field field-inline">
+              <span>Extraction template</span>
+              <select id="job-order-source" name="job_order_source">
+                <option value="auto" selected>Auto-detect</option>
+                <option value="1c">1-C procedure (detailed lines)</option>
+                <option value="running">Running completion</option>
+              </select>
+            </label>
+          </section>
+
+          <p class="submit-hint">At least one PDF section above is required.</p>
+          <button type="submit" id="submit-btn">Generate Workbook</button>
         </form>
 
         <div id="status" class="status hidden"></div>
@@ -47,30 +116,78 @@
 
       <section class="card results-card hidden" id="results-card">
         <div class="results-header">
-          <h2>Extracted items</h2>
+          <h2>Results</h2>
           <a id="download-link" class="download-btn" href="#" download>Download Excel</a>
         </div>
 
         <div class="summary" id="summary"></div>
 
-        <div class="table-wrap">
-          <table id="items-table">
-            <thead>
-              <tr>
-                <th>S.No.</th>
-                <th>Description</th>
-                <th>Per Day Rate $</th>
-                <th># Days</th>
-                <th>Total</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
+        <div id="proforma-results" class="result-block hidden">
+          <h3>Proforma</h3>
+          <div class="table-wrap">
+            <table id="proforma-table">
+              <thead>
+                <tr>
+                  <th>S.No.</th>
+                  <th>Description</th>
+                  <th>Per Day Rate $</th>
+                  <th># Days</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="soe-results" class="result-block hidden">
+          <h3>SOE Time Log</h3>
+          <div class="table-wrap">
+            <table id="soe-summary-table">
+              <thead>
+                <tr>
+                  <th>PDF</th>
+                  <th>Source</th>
+                  <th>Well / Date</th>
+                  <th>Period</th>
+                  <th>Rows</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="table-wrap">
+            <table id="soe-rows-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Time</th>
+                  <th>Event</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="job-order-results" class="result-block hidden">
+          <h3>Job Order</h3>
+          <div class="table-wrap">
+            <table id="job-order-table">
+              <thead>
+                <tr>
+                  <th>Step</th>
+                  <th>Text</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </div>
       </section>
     </main>
   </div>
 
-  <script src="/static/js/app.js"></script>
+  <script src="/static/js/generator.js"></script>
 </body>
 </html>
