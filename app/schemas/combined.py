@@ -23,6 +23,7 @@ class CombinedSoeResult(BaseModel):
     rows: list[SoeRow]
     row_count: int
     pdf_count: int
+    rig_filter: str = ""
 
 
 class CombinedResponse(BaseModel):

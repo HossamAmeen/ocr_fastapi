@@ -7,7 +7,7 @@ from pathlib import Path
 
 from excel_job_offer.writer import write_job_offer_table
 from excel_proforma.writer import write_proforma_table
-from excel_soe.writer import soe_data_to_rows, write_soe_table
+from excel_soe.writer import read_template_rig, soe_data_to_rows, write_soe_table
 from extract_job_order import extract_job_order_data
 from extract_performa import extract_proforma_items
 from extract_soe import extract_soe_data
@@ -65,9 +65,10 @@ def process_combined(
         pdf_summaries: list[dict] = []
         all_rows: list[dict] = []
         total_appended = 0
+        rig_filter = read_template_rig(template_path) or None
 
         for pdf_path, display_name in pdf_entries:
-            data = extract_soe_data(pdf_path)
+            data = extract_soe_data(pdf_path, rig_filter=rig_filter)
             rows = soe_data_to_rows(data)
             if not rows:
                 pdf_summaries.append(_pdf_summary(data, display_name, 0, True))
@@ -92,6 +93,20 @@ def process_combined(
 
         if total_appended == 0:
             output_path.unlink(missing_ok=True)
+            if rig_filter:
+                found = sorted(
+                    {
+                        str(summary.get("rig") or "").strip()
+                        for summary in pdf_summaries
+                        if str(summary.get("rig") or "").strip()
+                    }
+                )
+                found_text = ", ".join(found) if found else "none"
+                raise ValueError(
+                    f"No time-log rows found for Rig '{rig_filter}'. "
+                    f"PDF Rig values found: {found_text}. "
+                    "Set the SOE sheet Rig cell to match a PDF Rig: value."
+                )
             raise ValueError("No time-log rows found in any uploaded SOE PDF.")
 
         processed_sections.append("soe")
@@ -100,6 +115,7 @@ def process_combined(
             "rows": all_rows,
             "row_count": total_appended,
             "pdf_count": len(pdf_entries),
+            "rig_filter": rig_filter or "",
         }
 
     if job_order_pdf:

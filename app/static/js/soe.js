@@ -109,8 +109,15 @@ function renderResults(data) {
           <td>${summary.filename}</td>
           <td>${formatSource(summary.source)}</td>
           <td>${formatWellOrDate(summary)}</td>
+          <td>${summary.rig || "-"}</td>
           <td>${formatPeriod(summary)}</td>
-          <td class="num">${summary.skipped ? "Skipped" : summary.row_count}</td>
+          <td class="num">${
+            summary.skipped
+              ? summary.skip_reason === "rig_mismatch"
+                ? "Skipped (rig)"
+                : "Skipped"
+              : summary.row_count
+          }</td>
         </tr>
       `
     )

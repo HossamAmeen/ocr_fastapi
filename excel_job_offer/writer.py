@@ -20,6 +20,7 @@ ROW_BACKGROUND_LAST_COL = 22  # column V — full JOB ORDER procedure width
 STYLE_COLUMNS = tuple(range(1, 7))
 DEFAULT_TEMPLATE = Path("data.xlsm")
 _NUMBERED_LINE = re.compile(r"^(\d+(?:\.\d+)*)\s+(.+)$")
+_STEP_NUMBER_VALUE = re.compile(r"^(\d+)\)?\s*$")
 _NO_FILL = PatternFill()
 _EMPTY_SIDE = Side()
 _WHITE_BACKGROUND_REFERENCE_ROW = 108
@@ -56,7 +57,7 @@ def write_job_offer_table(
 
     write_row = _find_next_row(ws)
     previous_end_row = write_row - 1
-    order_base_row = _find_order_base_row(ws, write_row)
+    last_step = _find_last_step_number(ws, write_row)
     ws.insert_rows(write_row, amount=len(lines))
 
     for index, line in enumerate(lines):
@@ -68,7 +69,8 @@ def write_job_offer_table(
             row,
             kind,
             col_c,
-            order_base_row=order_base_row,
+            write_row=write_row,
+            last_step=last_step,
             numbered=kind == "step",
         )
 
@@ -136,11 +138,14 @@ def _split_numbered_line(text: str) -> tuple[str | None, str]:
     return number, body
 
 
-def _step_order_formula(first_numbered_row: int, row: int) -> str:
-    """Number only step rows; skips bullets/sections and reorders when rows are deleted."""
-    if row <= first_numbered_row:
-        return "=1"
-    return f'=COUNTIF($A${first_numbered_row}:A{row - 1},">0")+1'
+def _step_order_formula(write_row: int, row: int, last_step: int) -> str:
+    """Continue numbering from existing steps above; skip bullets/sections in appended rows."""
+    if row == write_row:
+        return f"={last_step + 1}"
+    return (
+        f"={last_step}+COUNTIF($A${write_row}:A{row - 1},\">0\")"
+        f"+COUNTIF($A${write_row}:A{row - 1},\"*)\")+1"
+    )
 
 
 def _write_formatted_row(
@@ -149,7 +154,8 @@ def _write_formatted_row(
     kind: str,
     col_c: str,
     *,
-    order_base_row: int,
+    write_row: int,
+    last_step: int,
     numbered: bool,
 ) -> None:
     template_row = _STYLE_TEMPLATE_ROWS.get(kind, _STYLE_TEMPLATE_ROWS["text"])
@@ -158,7 +164,7 @@ def _write_formatted_row(
     _copy_row_layout(ws, template_row, row)
 
     if numbered:
-        ws.cell(row, NUMBER_COLUMN).value = _step_order_formula(order_base_row + 1, row)
+        ws.cell(row, NUMBER_COLUMN).value = _step_order_formula(write_row, row, last_step)
     else:
         ws.cell(row, NUMBER_COLUMN).value = None
     ws.cell(row, TEXT_COLUMN).value = col_c
@@ -314,16 +320,27 @@ def _find_next_row(ws: Worksheet) -> int:
     return last_row + 1
 
 
-def _find_order_base_row(ws: Worksheet, write_row: int) -> int:
-    """Row offset for =ROW()-offset so numbering continues from the procedure block."""
-    first_row = write_row
-    for row in range(write_row - 1, 0, -1):
-        if any(_cell_value(ws, row, col) for col in range(1, 7)):
-            first_row = row
-            continue
-        if first_row < write_row:
-            break
-    return first_row - 1
+def _parse_step_number(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        number = int(value)
+        return number if number > 0 else None
+    if isinstance(value, str):
+        match = _STEP_NUMBER_VALUE.match(value.strip())
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def _find_last_step_number(ws: Worksheet, before_row: int) -> int:
+    """Highest step number already present above the append point."""
+    last_step = 0
+    for row in range(1, before_row):
+        step = _parse_step_number(_cell_value(ws, row, NUMBER_COLUMN))
+        if step is not None:
+            last_step = max(last_step, step)
+    return last_step
 
 
 def _cell_value(ws: Worksheet, row: int, col: int) -> Any:

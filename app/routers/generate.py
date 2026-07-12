@@ -126,6 +126,7 @@ async def generate_workbook(
             rows=[SoeRow(**row) for row in data["soe"]["rows"]],
             row_count=data["soe"]["row_count"],
             pdf_count=data["soe"]["pdf_count"],
+            rig_filter=data["soe"].get("rig_filter", ""),
         )
 
     job_order_result = None

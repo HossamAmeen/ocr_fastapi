@@ -24,6 +24,84 @@ DATE_FORMAT = "dd-mmm-yy"
 _FOOTER_MARKER = "CUSTOMER REP"
 _FOOTER_BLOCK_ROWS = 9
 DEFAULT_TEMPLATE = Path("data.xlsm")
+_SHEET_CELL_REF = re.compile(r"^='?([^'!]+)'?!\$?([A-Z]+)\$?(\d+)$", re.IGNORECASE)
+
+
+def read_template_rig(workbook_path: str | Path) -> str:
+    """Read the Rig value from an SOE workbook.
+
+    Prefers the SOE sheet Rig cell (what the user edits), then falls back to
+    Master Data / MS2 formula sources.
+    """
+    workbook_path = Path(workbook_path)
+    keep_vba = workbook_path.suffix.lower() == ".xlsm"
+    wb = load_workbook(workbook_path, data_only=False, keep_vba=keep_vba)
+
+    def resolve(value: object, depth: int = 0) -> str:
+        if value is None or depth > 5:
+            return ""
+        text = str(value).strip()
+        if not text:
+            return ""
+        if not text.startswith("="):
+            return text
+        match = _SHEET_CELL_REF.match(text)
+        if not match:
+            return ""
+        sheet_name, col, row = match.group(1), match.group(2), int(match.group(3))
+        if sheet_name not in wb.sheetnames:
+            return ""
+        return resolve(wb[sheet_name][f"{col}{row}"].value, depth + 1)
+
+    def soe_sheet_rig() -> str:
+        if "SOE" not in wb.sheetnames:
+            return ""
+        ws = wb["SOE"]
+        # Common layout: N5="Rig:", R5=value (merged R5:S5)
+        for coord in ("R5", "O5", "P5", "Q5"):
+            value = resolve(ws[coord].value)
+            if value:
+                return value
+        for row in ws.iter_rows(min_row=1, max_row=12, max_col=25):
+            for cell in row:
+                label = str(cell.value or "").strip().rstrip(":").casefold()
+                if label != "rig":
+                    continue
+                for offset in range(1, 8):
+                    neighbor = ws.cell(cell.row, cell.column + offset).value
+                    value = resolve(neighbor)
+                    if value:
+                        return value
+        return ""
+
+    # Prefer SOE sheet first — users typically edit Rig there.
+    value = soe_sheet_rig()
+    if value:
+        return value
+
+    if "Master Data" in wb.sheetnames:
+        value = resolve(wb["Master Data"]["E11"].value)
+        if value:
+            return value
+
+    if "MS2" in wb.sheetnames:
+        value = resolve(wb["MS2"]["I8"].value)
+        if value:
+            return value
+
+    # Fallback to cached calculated values when formulas were evaluated in Excel.
+    try:
+        wb_data = load_workbook(workbook_path, data_only=True, keep_vba=keep_vba)
+    except Exception:
+        return ""
+    for sheet_name, coord in (("SOE", "R5"), ("Master Data", "E11"), ("MS2", "I8")):
+        if sheet_name not in wb_data.sheetnames:
+            continue
+        cached = wb_data[sheet_name][coord].value
+        if cached is not None and str(cached).strip():
+            return str(cached).strip()
+    return ""
+
 
 
 def time_log_to_rows(data: dict[str, Any]) -> list[dict[str, str | datetime]]:
@@ -35,7 +113,7 @@ def time_log_to_rows(data: dict[str, Any]) -> list[dict[str, str | datetime]]:
     previous_minutes: int | None = None
 
     for entry in data.get("entries", []):
-        end_time = str(entry.get("to", ""))
+        end_time = str(entry.get("to") or entry.get("from") or "")
         minutes = _time_to_minutes(end_time)
         event_date = period_from
         if (

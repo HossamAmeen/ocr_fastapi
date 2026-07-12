@@ -5,11 +5,13 @@ class SoePdfSummary(BaseModel):
     filename: str
     source: str = ""
     well_name: str = ""
+    rig: str = ""
     report_date: str = ""
     report_period_from: str = ""
     report_period_to: str = ""
     row_count: int
     skipped: bool = False
+    skip_reason: str = ""
 
 
 class SoeRow(BaseModel):
