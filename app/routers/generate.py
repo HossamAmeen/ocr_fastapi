@@ -17,6 +17,7 @@ from app.schemas.job_order import JobOrderLine
 from app.schemas.proforma import ProformaItem
 from app.schemas.soe import SoePdfSummary, SoeRow
 from app.services.combined_service import process_combined
+from app.services.soe_service import parse_table_names
 
 router = APIRouter(prefix="/api/generate", tags=["generate"])
 
@@ -31,6 +32,7 @@ async def generate_workbook(
     job_order_source: str = Form(default="auto", description="Job Order template: auto, 1c, or running"),
     soe_pdfs: list[UploadFile] = File(default=[], description="SOE report PDFs"),
     soe_pdf_names: list[str] = Form(default=[], description="Display names for SOE PDFs"),
+    soe_table_names: list[str] = Form(default=[], description="SOE table titles to extract"),
 ) -> CombinedResponse:
     if not excel.filename or not excel.filename.lower().endswith((".xlsm", ".xlsx")):
         raise HTTPException(status_code=400, detail="Excel template (.xlsm or .xlsx) is required.")
@@ -94,6 +96,7 @@ async def generate_workbook(
             soe_pdfs=soe_entries or None,
             job_order_pdf=job_order_path,
             job_order_source=job_order_source,
+            soe_table_names=parse_table_names(soe_table_names) if soe_entries else None,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

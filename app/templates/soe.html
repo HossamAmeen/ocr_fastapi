@@ -20,9 +20,9 @@
         <p class="eyebrow">OCR + Excel</p>
         <h1>SOE Time Log Generator</h1>
         <p class="subtitle">
-          Upload one or more SOE PDFs and an Excel template. Supports Time Log,
-          Job Time Log, and Operational Time Summary reports. When the Excel Rig
-          cell is set, all PDF pages with a matching Rig: value are extracted.
+          Upload one or more SOE PDFs and an Excel template. Specify which table
+          names to extract. Rows from all PDFs are collected and sorted by date
+          before writing to the workbook.
         </p>
       </div>
     </header>
@@ -49,6 +49,19 @@
           </div>
 
           <ul id="pdf-file-list" class="file-list hidden"></ul>
+
+          <label class="field">
+            <span>Table names to extract</span>
+            <textarea
+              id="table-names"
+              rows="3"
+              placeholder="Time Log&#10;Job Time Log&#10;Operational Time Summary"
+            >Time Log
+Job Time Log</textarea>
+            <p class="field-hint">
+              One table name per line (or comma-separated). Only matching PDF tables are extracted.
+            </p>
+          </label>
 
           <label class="field">
             <span>Excel Template (.xlsm)</span>

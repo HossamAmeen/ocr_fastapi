@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 
 from app.config import OUTPUT_DIR, UPLOAD_DIR
 from app.schemas.soe import SoePdfSummary, SoeResponse, SoeRow
-from app.services.soe_service import process_soe
+from app.services.soe_service import parse_table_names, process_soe
 
 router = APIRouter(prefix="/api/soe", tags=["soe"])
 
@@ -17,6 +17,10 @@ router = APIRouter(prefix="/api/soe", tags=["soe"])
 async def generate_soe(
     pdfs: list[UploadFile] = File(..., description="SOE daily operations report PDFs"),
     pdf_names: list[str] = Form(default=[], description="Display names for uploaded PDFs"),
+    table_names: list[str] = Form(
+        default=[],
+        description="PDF table titles to extract (one per form field, or comma-separated)",
+    ),
     excel: UploadFile = File(..., description="Excel template (.xlsm)"),
 ) -> SoeResponse:
     if not pdfs:
@@ -45,7 +49,12 @@ async def generate_soe(
             pdf_entries.append((pdf_path, display_name))
 
         excel_path.write_bytes(await excel.read())
-        pdf_summaries, rows, output_path, row_count = process_soe(pdf_entries, excel_path)
+        parsed_table_names = parse_table_names(table_names)
+        pdf_summaries, rows, output_path, row_count = process_soe(
+            pdf_entries,
+            excel_path,
+            table_names=parsed_table_names,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except HTTPException:

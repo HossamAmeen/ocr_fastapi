@@ -32,6 +32,8 @@ _REPORT_DATE = re.compile(r"DATE:\s*(.+?)(?:\n|$)", re.IGNORECASE)
 _REPORT_FOR = re.compile(r"Report For:\s*(\d{1,2})/(\d{1,2})/(\d{4})", re.IGNORECASE)
 # Classic daily ops: "Rig: AL HUDAIRIYAT Cost ..."
 _RIG_LABEL = re.compile(r"(?im)^Rig:\s*(.+)$")
+# ADNOC / inline headers: "RIG: AD-109 DOM: ASR ..."
+_RIG_INLINE = re.compile(r"\bRIG\s*:?\s*([A-Z0-9][A-Z0-9\-]{1,20})\b")
 # Vendor reports sometimes use "Rig Number" / "Rig Number: 125"
 _RIG_NUMBER = re.compile(r"(?i)\bRig\s*Number\b\s*:?\s*([A-Za-z0-9\-]+)")
 _FROM_TIME = re.compile(r"^\d{1,2}:\d{2}$")
@@ -193,23 +195,65 @@ def _parse_time_log_row(line: str, time_column: str) -> dict[str, Any] | None:
     )
 
 
-def _is_time_log_title_line(line: str) -> bool:
-    return bool(re.match(
-        r"^(?:[\w/&\-]+[^\S\n]+)*time[ \t\-]+log[^\S\n]*$",
-        line.strip(),
-        re.IGNORECASE,
-    ))
+_DEFAULT_TABLE_NAMES = ("Time Log", "Job Time Log")
+_OPERATIONAL_TIME_SUMMARY = "Operational Time Summary"
 
 
-def _find_time_log_start(text: str) -> int:
-    """Return the start index of the first standalone time-log title, or -1."""
-    match = _TIME_LOG_TITLE_LINE.search(text)
-    return match.start() if match else -1
+def _normalize_table_names(table_names: list[str] | None) -> list[str]:
+    if not table_names:
+        return list(_DEFAULT_TABLE_NAMES)
+    cleaned = [name.strip() for name in table_names if name and name.strip()]
+    return cleaned or list(_DEFAULT_TABLE_NAMES)
 
 
-def _is_time_log_heading(line: str) -> bool:
+def _compile_table_title_pattern(name: str) -> re.Pattern[str]:
+    """Build a regex that matches a standalone PDF table title line."""
+    tokens = [re.escape(part) for part in name.split() if part]
+    if not tokens:
+        return re.compile(r"a^")
+    body = r"[^\S\n]+".join(tokens)
+    return re.compile(rf"^{body}[^\S\n]*$", re.IGNORECASE | re.MULTILINE)
+
+
+def _table_title_patterns(table_names: list[str] | None) -> list[re.Pattern[str]]:
+    return [_compile_table_title_pattern(name) for name in _normalize_table_names(table_names)]
+
+
+def _line_matches_table_title(line: str, patterns: list[re.Pattern[str]]) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return False
+    return any(pattern.match(stripped) for pattern in patterns)
+
+
+def _is_time_log_title_line(line: str, table_names: list[str] | None = None) -> bool:
+    patterns = _table_title_patterns(table_names)
+    if _line_matches_table_title(line, patterns):
+        return True
+    if not table_names:
+        return bool(re.match(
+            r"^(?:[\w/&\-]+[^\S\n]+)*time[ \t\-]+log[^\S\n]*$",
+            line.strip(),
+            re.IGNORECASE,
+        ))
+    return False
+
+
+def _find_time_log_start(text: str, table_names: list[str] | None = None) -> int:
+    """Return the start index of the first matching table title, or -1."""
+    patterns = _table_title_patterns(table_names)
+    starts = [match.start() for pattern in patterns for match in pattern.finditer(text)]
+    if starts:
+        return min(starts)
+    if not table_names:
+        match = _TIME_LOG_TITLE_LINE.search(text)
+        return match.start() if match else -1
+    return -1
+
+
+def _is_time_log_heading(line: str, table_names: list[str] | None = None) -> bool:
     """True for title-like headings (used by Job Time Log helpers)."""
-    return _is_time_log_title_line(line) or bool(
+    return _is_time_log_title_line(line, table_names) or bool(
         _TIME_LOG_HEADING.search(line) and len(line.strip()) <= 40
     )
 
@@ -219,9 +263,9 @@ def _is_job_time_log_section(section: str) -> bool:
     return bool(_JOB_TIME_LOG_MARKER.search(section[:500]))
 
 
-def _is_skippable_time_log_line(line: str) -> bool:
+def _is_skippable_time_log_line(line: str, table_names: list[str] | None = None) -> bool:
     """Skip reprinted titles, column headers, and page chrome across page breaks."""
-    if _is_time_log_title_line(line):
+    if _is_time_log_title_line(line, table_names):
         return True
     if _is_time_log_header_line(line):
         return True
@@ -230,21 +274,35 @@ def _is_skippable_time_log_line(line: str) -> bool:
     return False
 
 
-def _iter_classic_time_log_sections(text: str) -> list[tuple[str, int]]:
-    """Yield (section_text, start_index) for each Time Log through its summary.
+def _iter_classic_time_log_sections(
+    text: str,
+    table_names: list[str] | None = None,
+) -> list[tuple[str, int]]:
+    """Yield (section_text, start_index) for each matching table through its summary.
 
-    Continuation pages that reprint the Time Log header stay inside the same
+    Continuation pages that reprint the table header stay inside the same
     section until the summary marker appears.
     """
-    titles = list(_TIME_LOG_TITLE_LINE.finditer(text))
+    patterns = _table_title_patterns(table_names)
+    title_matches = sorted(
+        (
+            (match.start(), match)
+            for pattern in patterns
+            for match in pattern.finditer(text)
+        ),
+        key=lambda item: item[0],
+    )
+    if not title_matches and not table_names:
+        title_matches = [(match.start(), match) for match in _TIME_LOG_TITLE_LINE.finditer(text)]
+
     sections: list[tuple[str, int]] = []
     index = 0
-    while index < len(titles):
-        start = titles[index].start()
+    while index < len(title_matches):
+        start = title_matches[index][0]
         end_match = _SECTION_END.search(text, start)
         end = end_match.start() if end_match else len(text)
         sections.append((text[start:end].strip(), start))
-        while index < len(titles) and titles[index].start() < end:
+        while index < len(title_matches) and title_matches[index][0] < end:
             index += 1
     return sections
 
@@ -254,14 +312,34 @@ def _clean_rig_value(raw: str) -> str:
     text = raw.strip()
     if not text:
         return ""
-    # Stop before Cost / money / other header fields on the same line.
+    # Stop before other header fields that often share the same PDF line.
     text = re.split(
-        r"\s{2,}|\s+Cost\b|\s+Number\b|\s+Rotating\b|\s+\d{1,3}(?:,\d{3})+(?:\.\d+)?",
+        r"\s{2,}"
+        r"|\s+Cost\b"
+        r"|\s+Number\b"
+        r"|\s+Rotating\b"
+        r"|\s+DOM\s*:"
+        r"|\s+WELL\s*:"
+        r"|\s+Well\s*:"
+        r"|\s+EVENT\s*:"
+        r"|\s+Event\s*:"
+        r"|\s+RPT\b"
+        r"|\s+Rpt\b"
+        r"|\s+DATE\s*:"
+        r"|\s+Date\s*:"
+        r"|\s+Report\b"
+        r"|\s+\d{1,3}(?:,\d{3})+(?:\.\d+)?",
         text,
         maxsplit=1,
         flags=re.IGNORECASE,
     )[0].strip()
     return text
+
+
+def format_rig_for_display(value: str) -> str:
+    """Return a short, human-readable rig label for UI and error messages."""
+    cleaned = _clean_rig_value(value)
+    return cleaned or str(value or "").strip() or "unknown"
 
 
 def _normalize_rig(value: str) -> str:
@@ -278,7 +356,7 @@ def rigs_match(left: str, right: str) -> bool:
 
 
 def _extract_rig_from_text(text: str) -> str:
-    """Return the last Rig: value, or a Rig Number id when no Rig: label exists."""
+    """Return the Rig value from page or section text."""
     rig = ""
     for match in _RIG_LABEL.finditer(text):
         cleaned = _clean_rig_value(match.group(1))
@@ -286,10 +364,25 @@ def _extract_rig_from_text(text: str) -> str:
             rig = cleaned
     if rig:
         return rig
+    inline_match = _RIG_INLINE.search(text)
+    if inline_match:
+        cleaned = _clean_rig_value(inline_match.group(1))
+        if cleaned:
+            return cleaned
     number_match = re.search(r"(?is)\bRig\s*Number\b.{0,80}?\b(\d{2,5})\b", text)
     if number_match:
         return number_match.group(1)
     return ""
+
+
+def _collect_rigs_from_pages(pages: list[str]) -> list[str]:
+    """Return unique rig codes found across PDF pages, in order."""
+    rigs: list[str] = []
+    for page_text in pages:
+        display = format_rig_for_display(_extract_rig_from_text(page_text))
+        if display != "unknown" and display not in rigs:
+            rigs.append(display)
+    return rigs
 
 
 def _has_classic_rig_label(text: str) -> bool:
@@ -510,6 +603,7 @@ def extract_job_time_log(
     pdf_path: str | Path,
     *,
     rig_filter: str | None = None,
+    table_names: list[str] | None = None,
 ) -> dict[str, Any]:
     """Extract Start/End/Comment Job Time Log tables from vendor drilling PDFs."""
     pdf_path = Path(pdf_path)
@@ -528,6 +622,7 @@ def extract_job_time_log(
             "oamn_entries": [],
             "total_duration": 0.0,
             "skipped_rig_mismatch": True,
+            "skip_reason": "rig_mismatch",
             "matched_pages": [],
         }
 
@@ -543,6 +638,7 @@ def extract_job_time_log(
 
     report_date = _report_for_to_dmy(text)
     well_match = _WELL_NAME.search(text)
+    skip_reason = "empty_table" if not entries else ""
     return {
         "well_name": well_match.group(1) if well_match else "",
         "rig": rig,
@@ -551,15 +647,19 @@ def extract_job_time_log(
         "entries": entries,
         "oamn_entries": [],
         "total_duration": round(sum(float(entry.get("duration", 0.0)) for entry in entries), 2),
+        "skip_reason": skip_reason,
         "matched_pages": [index + 1 for index in page_indexes],
     }
 
 
 
-def _parse_time_log_section(section: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _parse_time_log_section(
+    section: str,
+    table_names: list[str] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     lines = [line.strip() for line in section.splitlines() if line.strip()]
     time_column = "to"
-    if lines and _is_time_log_title_line(lines[0]):
+    if lines and _is_time_log_title_line(lines[0], table_names):
         # Skip title; also skip the column header row when present.
         if len(lines) >= 2 and _is_time_log_header_line(lines[1]):
             time_column = _detect_time_log_time_column(lines[1])
@@ -578,7 +678,7 @@ def _parse_time_log_section(section: str) -> tuple[list[dict[str, Any]], list[di
     pending_oamn: dict[str, Any] | None = None
 
     for line in lines:
-        if _is_skippable_time_log_line(line):
+        if _is_skippable_time_log_line(line, table_names):
             continue
 
         if _OAMN_HEADER.match(line):
@@ -649,6 +749,7 @@ def extract_time_log(
     pdf_path: str | Path,
     *,
     rig_filter: str | None = None,
+    table_names: list[str] | None = None,
 ) -> dict[str, Any]:
     """Extract time-log table(s) from an SOE daily operations report PDF.
 
@@ -672,6 +773,7 @@ def extract_time_log(
             "oamn_entries": [],
             "total_duration": 0.0,
             "skipped_rig_mismatch": True,
+            "skip_reason": "rig_mismatch",
             "matched_pages": [],
         }
 
@@ -687,7 +789,7 @@ def extract_time_log(
             "matched_pages": [],
         }
 
-    start = _find_time_log_start(text)
+    start = _find_time_log_start(text, table_names)
     if start < 0:
         return {
             "well_name": _WELL_NAME.search(text).group(1) if _WELL_NAME.search(text) else "",
@@ -697,6 +799,7 @@ def extract_time_log(
             "entries": [],
             "oamn_entries": [],
             "total_duration": 0.0,
+            "skip_reason": "no_matching_table",
             "matched_pages": [index + 1 for index in matched_page_indexes],
         }
 
@@ -707,11 +810,11 @@ def extract_time_log(
     first_section = text[start:end].strip() if end > 0 else text[start : start + 2000].strip()
 
     if _is_job_time_log_section(first_section):
-        data = extract_job_time_log(pdf_path, rig_filter=rig_filter)
+        data = extract_job_time_log(pdf_path, rig_filter=rig_filter, table_names=table_names)
         data["matched_pages"] = [index + 1 for index in matched_page_indexes]
         return data
 
-    sections = _iter_classic_time_log_sections(text)
+    sections = _iter_classic_time_log_sections(text, table_names)
     entries: list[dict[str, Any]] = []
     oamn_entries: list[dict[str, Any]] = []
     wells: list[str] = []
@@ -724,7 +827,7 @@ def extract_time_log(
         # Pages were already filtered by Rig; still skip odd mismatches if any.
         if effective_filter and page_rig and not rigs_match(page_rig, effective_filter):
             continue
-        section_entries, section_oamn = _parse_time_log_section(section)
+        section_entries, section_oamn = _parse_time_log_section(section, table_names)
         entries.extend(section_entries)
         oamn_entries.extend(section_oamn)
         if well and well not in wells:
@@ -748,6 +851,12 @@ def extract_time_log(
             report_period_from = period_match.group(1).strip()
             report_period_to = period_match.group(2).strip()
 
+    skip_reason = ""
+    if effective_filter and not entries and not oamn_entries:
+        skip_reason = "empty_table" if sections else "no_matching_table"
+    elif not entries and not oamn_entries:
+        skip_reason = "empty_table" if sections else "no_matching_table"
+
     return {
         "well_name": well_name,
         "rig": rig_name,
@@ -756,7 +865,8 @@ def extract_time_log(
         "entries": entries,
         "oamn_entries": oamn_entries,
         "total_duration": round(sum(entry["duration"] for entry in entries), 2),
-        "skipped_rig_mismatch": bool(effective_filter and not entries and not oamn_entries),
+        "skipped_rig_mismatch": skip_reason == "rig_mismatch",
+        "skip_reason": skip_reason,
         "matched_pages": [index + 1 for index in matched_page_indexes],
     }
 
@@ -778,80 +888,142 @@ def _find_table_columns(cells: list[str]) -> tuple[int | None, int | None]:
     return from_col, details_col
 
 
-def extract_operational_time_summary(pdf_path: str | Path) -> dict[str, Any]:
-    """Extract DATE and Operational Time Summary rows from a drilling report PDF."""
-    pdf_path = Path(pdf_path)
-    report_date = ""
+def _extract_report_date_from_text(text: str) -> str:
+    match = _REPORT_DATE.search(text)
+    return match.group(1).strip() if match else ""
+
+
+def _extract_operational_tables_from_page(page: Any) -> tuple[str, list[dict[str, str]]]:
+    """Extract Operational Time Summary rows from one PDF page."""
+    page_text = page.extract_text() or ""
+    page_date = _extract_report_date_from_text(page_text)
     entries: list[dict[str, str]] = []
-    text = ""
+
+    for table in page.extract_tables() or []:
+        if not table or len(table) < 3:
+            continue
+
+        header_row_index: int | None = None
+        from_col: int | None = None
+        details_col: int | None = None
+        table_date = page_date
+
+        for row_index, row in enumerate(table):
+            cells = [_cell_text(cell) for cell in row]
+            joined = " ".join(cells)
+
+            if "DATE:" in joined.upper():
+                match = _REPORT_DATE.search(joined)
+                if match:
+                    table_date = match.group(1).strip()
+
+            found_from, found_details = _find_table_columns(cells)
+            if found_from is not None and found_details is not None:
+                header_row_index = row_index
+                from_col = found_from
+                details_col = found_details
+                break
+
+        if header_row_index is None or from_col is None or details_col is None:
+            continue
+
+        for row in table[header_row_index + 1 :]:
+            cells = [_cell_text(cell) for cell in row]
+            if not any(cells):
+                continue
+
+            time_from = cells[from_col] if from_col < len(cells) else ""
+            operation_details = cells[details_col] if details_col < len(cells) else ""
+            if not _FROM_TIME.match(time_from):
+                break
+
+            entries.append(
+                {
+                    "from": time_from,
+                    "operation_details": operation_details,
+                    "report_date": table_date,
+                }
+            )
+
+    return page_date, entries
+
+
+def extract_operational_time_summary(
+    pdf_path: str | Path,
+    *,
+    rig_filter: str | None = None,
+) -> dict[str, Any]:
+    """Extract Operational Time Summary rows, optionally filtered by page Rig."""
+    pdf_path = Path(pdf_path)
+    entries: list[dict[str, str]] = []
+    matched_rigs: list[str] = []
+    matched_pages: list[int] = []
+    report_date = ""
+
+    pages = _iter_pdf_page_texts(pdf_path)
+    all_pdf_rigs = _collect_rigs_from_pages(pages)
 
     with pdfplumber.open(pdf_path) as document:
-        for page in document.pages:
-            for table in page.extract_tables() or []:
-                if not table or len(table) < 3:
-                    continue
+        for page_index, page in enumerate(document.pages):
+            page_text = pages[page_index] if page_index < len(pages) else (page.extract_text() or "")
+            page_rig = _extract_rig_from_text(page_text)
 
-                header_row_index: int | None = None
-                from_col: int | None = None
-                details_col: int | None = None
+            if rig_filter and (not page_rig or not rigs_match(page_rig, rig_filter)):
+                continue
 
-                for row_index, row in enumerate(table):
-                    cells = [_cell_text(cell) for cell in row]
-                    joined = " ".join(cells)
+            page_date, page_entries = _extract_operational_tables_from_page(page)
+            if not page_entries:
+                continue
 
-                    if not report_date and "DATE:" in joined.upper():
-                        match = _REPORT_DATE.search(joined)
-                        if match:
-                            report_date = match.group(1).strip()
+            rig_display = format_rig_for_display(page_rig)
+            if rig_display != "unknown" and rig_display not in matched_rigs:
+                matched_rigs.append(rig_display)
+            matched_pages.append(page_index + 1)
+            if not report_date and page_date:
+                report_date = page_date
+            entries.extend(page_entries)
 
-                    found_from, found_details = _find_table_columns(cells)
-                    if found_from is not None and found_details is not None:
-                        header_row_index = row_index
-                        from_col = found_from
-                        details_col = found_details
-                        break
+    skip_reason = ""
+    if not entries:
+        if rig_filter:
+            has_matching_rig_page = any(
+                rigs_match(rig_filter, rig) for rig in all_pdf_rigs
+            )
+            skip_reason = "no_matching_table" if has_matching_rig_page else "rig_mismatch"
+        else:
+            skip_reason = "empty_table" if all_pdf_rigs else "no_matching_table"
 
-                if header_row_index is None or from_col is None or details_col is None:
-                    continue
-
-                for row in table[header_row_index + 1 :]:
-                    cells = [_cell_text(cell) for cell in row]
-                    if not any(cells):
-                        continue
-
-                    time_from = cells[from_col] if from_col < len(cells) else ""
-                    operation_details = cells[details_col] if details_col < len(cells) else ""
-                    if not _FROM_TIME.match(time_from):
-                        break
-
-                    entries.append(
-                        {
-                            "from": time_from,
-                            "operation_details": operation_details,
-                        }
-                    )
-
-    if not report_date:
-        text = _extract_raw_text(pdf_path)
-        match = _REPORT_DATE.search(text)
-        if match:
-            report_date = match.group(1).strip()
-
-    if not text:
-        text = _extract_raw_text(pdf_path)
+    if matched_rigs:
+        rig_display = ", ".join(matched_rigs)
+    elif all_pdf_rigs:
+        rig_display = ", ".join(all_pdf_rigs)
+    else:
+        rig_display = ""
 
     return {
         "source": "operational_time_summary",
         "date": report_date,
-        "rig": _extract_rig_from_text(text),
+        "rig": rig_display,
         "entries": entries,
+        "all_rigs": all_pdf_rigs,
+        "skip_reason": skip_reason,
+        "skipped_rig_mismatch": skip_reason == "rig_mismatch",
+        "matched_pages": matched_pages,
     }
+
+
+def _wants_operational_time_summary(table_names: list[str] | None) -> bool:
+    if not table_names:
+        return True
+    normalized = {name.strip().casefold() for name in table_names if name and name.strip()}
+    return _OPERATIONAL_TIME_SUMMARY.casefold() in normalized
 
 
 def extract_soe_data(
     pdf_path: str | Path,
     *,
     rig_filter: str | None = None,
+    table_names: list[str] | None = None,
 ) -> dict[str, Any]:
     """Extract SOE rows from either Time Log or Operational Time Summary PDFs.
 
@@ -859,18 +1031,10 @@ def extract_soe_data(
     value matches that filter (same as the Excel Rig cell) are returned.
     """
     text = _extract_raw_text(Path(pdf_path))
-    if "Operational Time Summary" in text:
-        pages = _iter_pdf_page_texts(Path(pdf_path))
-        data = extract_operational_time_summary(pdf_path)
-        effective_filter = _effective_rig_page_filter(pages, rig_filter)
-        if effective_filter:
-            pdf_rig = str(data.get("rig") or "")
-            if not pdf_rig or not rigs_match(pdf_rig, effective_filter):
-                data["entries"] = []
-                data["skipped_rig_mismatch"] = True
-        return data
+    if _wants_operational_time_summary(table_names) and "Operational Time Summary" in text:
+        return extract_operational_time_summary(pdf_path, rig_filter=rig_filter)
 
-    data = extract_time_log(pdf_path, rig_filter=rig_filter)
+    data = extract_time_log(pdf_path, rig_filter=rig_filter, table_names=table_names)
     data["source"] = "time_log"
     return data
 

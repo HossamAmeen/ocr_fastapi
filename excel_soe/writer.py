@@ -158,9 +158,10 @@ def operational_summary_to_rows(data: dict[str, Any]) -> list[dict[str, str | da
     rows: list[dict[str, str | datetime]] = []
 
     for entry in data.get("entries", []):
+        entry_date = _parse_drilling_date(str(entry.get("report_date") or "")) or report_date
         rows.append(
             {
-                "date": report_date or "",
+                "date": entry_date or "",
                 "time": str(entry.get("from", "")),
                 "event": str(entry.get("operation_details", "")).strip(),
             }
@@ -174,6 +175,57 @@ def soe_data_to_rows(data: dict[str, Any]) -> list[dict[str, str | datetime]]:
     if data.get("source") == "operational_time_summary":
         return operational_summary_to_rows(data)
     return time_log_to_rows(data)
+
+
+def sort_soe_rows(rows: list[dict[str, str | datetime]]) -> list[dict[str, str | datetime]]:
+    """Sort SOE rows chronologically by date, then time."""
+    return sorted(rows, key=_soe_row_sort_key)
+
+
+def write_soe_rows(
+    input_path: str | Path,
+    output_path: str | Path,
+    rows: list[dict[str, str | datetime]],
+    template_path: str | Path | None = None,
+) -> tuple[Path, int]:
+    """Write pre-built SOE rows into the workbook table area."""
+    input_path = Path(input_path)
+    output_path = Path(output_path)
+    template_path = Path(template_path or DEFAULT_TEMPLATE)
+    if not rows:
+        return output_path, 0
+
+    keep_vba = input_path.suffix.lower() == ".xlsm"
+    wb = load_workbook(input_path, keep_vba=keep_vba)
+    ws = wb[SOE_SHEET]
+    template_ws = _load_template_sheet(template_path, keep_vba)
+
+    footer_row = _find_footer_row(ws)
+    footer_row = _compact_leading_empty_rows(ws, template_ws, footer_row)
+    last_data_row = _find_last_data_row(ws, footer_row)
+    write_start = (
+        last_data_row + 1
+        if last_data_row >= DATA_START_ROW
+        else DATA_START_ROW
+    )
+
+    available_rows = footer_row - write_start
+    if available_rows < len(rows):
+        ws.insert_rows(footer_row, amount=len(rows) - available_rows)
+
+    for index, row_data in enumerate(rows):
+        _write_table_row(ws, template_ws, write_start + index, row_data)
+
+    last_data_row = write_start + len(rows) - 1
+    new_footer_row = last_data_row + 1
+
+    _remove_duplicate_footers(ws, new_footer_row)
+    _restore_footer_block(ws, template_ws, new_footer_row)
+    _apply_table_borders(ws, template_ws, DATA_START_ROW, last_data_row)
+    _update_print_area(ws, new_footer_row + _FOOTER_BLOCK_ROWS - 1)
+
+    wb.save(output_path)
+    return output_path, len(rows)
 
 
 def write_soe_table(
@@ -517,6 +569,43 @@ def _format_oamn_event(entry: dict[str, Any]) -> str:
         if note_text:
             lines.append(f"* {note_text}")
     return "\n".join(line for line in lines if line)
+
+
+def _soe_row_sort_key(row: dict[str, str | datetime]) -> tuple[datetime, int, str]:
+    date_value = row.get("date")
+    if isinstance(date_value, datetime):
+        parsed_date = date_value
+    else:
+        parsed_date = _parse_sortable_date(str(date_value or "")) or datetime.min
+
+    time_text = str(row.get("time") or "")
+    time_minutes = _time_sort_minutes(time_text)
+    return parsed_date, time_minutes, time_text.casefold()
+
+
+def _parse_sortable_date(value: str) -> datetime | None:
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    if isinstance(value, datetime):
+        return value
+    for fmt in ("%d-%b-%y", "%d-%b-%Y", "%b %d, %Y", "%B %d, %Y"):
+        try:
+            return datetime.strptime(cleaned, fmt)
+        except ValueError:
+            continue
+    return _parse_report_date(cleaned) or _parse_drilling_date(cleaned)
+
+
+def _time_sort_minutes(value: str) -> int:
+    cleaned = value.strip()
+    if not cleaned:
+        return -1
+    range_match = re.match(r"^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$", cleaned)
+    if range_match:
+        cleaned = range_match.group(1)
+    minutes = _time_to_minutes(cleaned)
+    return minutes if minutes is not None else -1
 
 
 def _parse_drilling_date(value: str) -> datetime | None:

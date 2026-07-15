@@ -260,6 +260,17 @@ input[type="file"] {
   color: var(--text);
 }
 
+textarea {
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+  min-height: 4.5rem;
+}
+
 button,
 .download-btn {
   display: inline-flex;
@@ -313,6 +324,7 @@ button:disabled {
   background: rgba(248, 113, 113, 0.12);
   border: 1px solid rgba(248, 113, 113, 0.35);
   color: #fecaca;
+  white-space: pre-wrap;
 }
 
 .hidden {

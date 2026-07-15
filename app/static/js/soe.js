@@ -9,6 +9,7 @@ const downloadLink = document.getElementById("download-link");
 const pdfFilesInput = document.getElementById("pdf-files");
 const pdfFolderInput = document.getElementById("pdf-folder");
 const pdfFileList = document.getElementById("pdf-file-list");
+const tableNamesInput = document.getElementById("table-names");
 
 let selectedPdfFiles = [];
 
@@ -79,11 +80,32 @@ function formatWellOrDate(summary) {
   return summary.well_name || "-";
 }
 
-function formatPeriod(summary) {
+function formatSkipReason(summary) {
+  if (!summary.skipped) {
+    return summary.row_count;
+  }
+  if (summary.skip_reason === "rig_mismatch") {
+    return "Skipped (rig mismatch)";
+  }
+  if (summary.skip_reason === "no_matching_table") {
+    return "Skipped (no matching table)";
+  }
+  if (summary.skip_reason === "empty_table") {
+    return "Skipped (empty table)";
+  }
+  return "Skipped";
+}
   if (summary.report_period_from) {
     return `${summary.report_period_from}${summary.report_period_to ? ` to ${summary.report_period_to}` : ""}`;
   }
   return "-";
+}
+
+function parseTableNames(rawValue) {
+  return rawValue
+    .split(/[\n,]+/)
+    .map((name) => name.trim())
+    .filter(Boolean);
 }
 
 function renderResults(data) {
@@ -111,13 +133,7 @@ function renderResults(data) {
           <td>${formatWellOrDate(summary)}</td>
           <td>${summary.rig || "-"}</td>
           <td>${formatPeriod(summary)}</td>
-          <td class="num">${
-            summary.skipped
-              ? summary.skip_reason === "rig_mismatch"
-                ? "Skipped (rig)"
-                : "Skipped"
-              : summary.row_count
-          }</td>
+          <td class="num">${formatSkipReason(summary)}</td>
         </tr>
       `
     )
@@ -172,6 +188,9 @@ form.addEventListener("submit", async (event) => {
   selectedPdfFiles.forEach((file) => {
     formData.append("pdfs", file);
     formData.append("pdf_names", displayName(file));
+  });
+  parseTableNames(tableNamesInput.value).forEach((name) => {
+    formData.append("table_names", name);
   });
   formData.append("excel", excelFile);
 

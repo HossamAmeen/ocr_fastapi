@@ -16,6 +16,7 @@ const excelFileNameEl = document.getElementById("excel-file-name");
 const proformaFileNameEl = document.getElementById("proforma-file-name");
 const jobOrderFileNameEl = document.getElementById("job-order-file-name");
 const soeFileList = document.getElementById("soe-file-list");
+const soeTableNamesInput = document.getElementById("soe-table-names");
 
 let selectedSoeFiles = [];
 
@@ -110,11 +111,34 @@ function formatWellOrDate(summary) {
   return summary.well_name || "-";
 }
 
+function formatSkipReason(summary) {
+  if (!summary.skipped) {
+    return summary.row_count;
+  }
+  if (summary.skip_reason === "rig_mismatch") {
+    return "Skipped (rig mismatch)";
+  }
+  if (summary.skip_reason === "no_matching_table") {
+    return "Skipped (no matching table)";
+  }
+  if (summary.skip_reason === "empty_table") {
+    return "Skipped (empty table)";
+  }
+  return "Skipped";
+}
+
 function formatPeriod(summary) {
   if (summary.report_period_from) {
     return `${summary.report_period_from}${summary.report_period_to ? ` to ${summary.report_period_to}` : ""}`;
   }
   return "-";
+}
+
+function parseTableNames(rawValue) {
+  return rawValue
+    .split(/[\n,]+/)
+    .map((name) => name.trim())
+    .filter(Boolean);
 }
 
 function hideResultBlocks() {
@@ -187,13 +211,7 @@ function renderResults(data) {
             <td>${formatWellOrDate(summary)}</td>
             <td>${summary.rig || "-"}</td>
             <td>${formatPeriod(summary)}</td>
-            <td class="num">${
-              summary.skipped
-                ? summary.skip_reason === "rig_mismatch"
-                  ? "Skipped (rig)"
-                  : "Skipped"
-                : summary.row_count
-            }</td>
+            <td class="num">${formatSkipReason(summary)}</td>
           </tr>
         `
       )
@@ -299,6 +317,11 @@ form.addEventListener("submit", async (event) => {
     formData.append("soe_pdfs", file);
     formData.append("soe_pdf_names", displayName(file));
   });
+  if (selectedSoeFiles.length) {
+    parseTableNames(soeTableNamesInput.value).forEach((name) => {
+      formData.append("soe_table_names", name);
+    });
+  }
 
   submitBtn.disabled = true;
   submitBtn.textContent = "Processing...";
