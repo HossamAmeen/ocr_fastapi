@@ -7,7 +7,7 @@ from pathlib import Path
 
 from excel_job_offer.writer import write_job_offer_table
 from excel_proforma.writer import write_proforma_table
-from excel_soe.writer import read_template_rig, soe_data_to_rows, sort_soe_rows, write_soe_rows
+from excel_soe.writer import collapse_repeated_row_dates, read_template_rig, soe_data_to_rows, sort_soe_rows, write_soe_rows
 from extract_job_order import extract_job_order_data
 from extract_performa import extract_proforma_items
 from extract_soe import extract_soe_data
@@ -103,15 +103,16 @@ def process_combined(
         )
 
         processed_sections.append("soe")
+        display_rows = collapse_repeated_row_dates(sorted_rows)
         result["soe"] = {
             "pdf_summaries": pdf_summaries,
             "rows": [
                 {
-                    "date": _format_row_date(row["date"]),
+                    "date": _format_row_date(row["date"]) if row.get("date") else "",
                     "time": str(row["time"]),
                     "event": str(row["event"]),
                 }
-                for row in sorted_rows
+                for row in display_rows
             ],
             "row_count": total_appended,
             "pdf_count": len(pdf_entries),

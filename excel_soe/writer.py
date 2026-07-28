@@ -213,8 +213,7 @@ def write_soe_rows(
     if available_rows < len(rows):
         ws.insert_rows(footer_row, amount=len(rows) - available_rows)
 
-    for index, row_data in enumerate(rows):
-        _write_table_row(ws, template_ws, write_start + index, row_data)
+    _write_table_row_sequence(ws, template_ws, write_start, rows)
 
     last_data_row = write_start + len(rows) - 1
     new_footer_row = last_data_row + 1
@@ -260,8 +259,7 @@ def write_soe_table(
     if available_rows < len(rows):
         ws.insert_rows(footer_row, amount=len(rows) - available_rows)
 
-    for index, row_data in enumerate(rows):
-        _write_table_row(ws, template_ws, write_start + index, row_data)
+    _write_table_row_sequence(ws, template_ws, write_start, rows)
 
     last_data_row = write_start + len(rows) - 1
     new_footer_row = last_data_row + 1
@@ -335,8 +333,7 @@ def _compact_leading_empty_rows(
     for row in range(DATA_START_ROW, footer_row):
         _clear_table_row_layout(ws, row)
 
-    for index, entry in enumerate(entries):
-        _write_table_row(ws, template_ws, DATA_START_ROW + index, entry)
+    _write_table_row_sequence(ws, template_ws, DATA_START_ROW, entries)
 
     new_footer_row = DATA_START_ROW + len(entries)
     _remove_duplicate_footers(ws, new_footer_row)
@@ -399,21 +396,74 @@ def _is_table_data_row(ws: Worksheet, row: int) -> bool:
     return not text.startswith((_FOOTER_MARKER, "SIGNATURE", "©"))
 
 
+def _date_group_key(value: object) -> str:
+    """Normalize a row date for consecutive grouping."""
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d")
+    parsed = _parse_sortable_date(str(value or ""))
+    if parsed:
+        return parsed.strftime("%Y-%m-%d")
+    return str(value or "").strip().casefold()
+
+
+def collapse_repeated_row_dates(
+    rows: list[dict[str, str | datetime]],
+) -> list[dict[str, str | datetime]]:
+    """Keep the date only on the first row of each consecutive date group."""
+    collapsed: list[dict[str, str | datetime]] = []
+    previous_key: str | None = None
+
+    for row in rows:
+        row_copy = dict(row)
+        date_key = _date_group_key(row.get("date"))
+        if date_key and date_key == previous_key:
+            row_copy["date"] = ""
+        elif date_key:
+            previous_key = date_key
+        collapsed.append(row_copy)
+
+    return collapsed
+
+
+def _write_table_row_sequence(
+    ws: Worksheet,
+    template_ws: Worksheet,
+    start_row: int,
+    rows: list[dict[str, str | datetime]],
+) -> None:
+    previous_key: str | None = None
+    for index, row_data in enumerate(rows):
+        date_key = _date_group_key(row_data.get("date"))
+        show_date = bool(date_key) and date_key != previous_key
+        if date_key and show_date:
+            previous_key = date_key
+        _write_table_row(
+            ws,
+            template_ws,
+            start_row + index,
+            row_data,
+            show_date=show_date,
+        )
+
+
 def _write_table_row(
     ws: Worksheet,
     template_ws: Worksheet,
     row: int,
     row_data: dict[str, str | datetime],
+    *,
+    show_date: bool = True,
 ) -> None:
     _clear_table_row_layout(ws, row)
     _copy_table_row_layout(ws, template_ws, TABLE_INNER_BORDER_ROW, row)
 
-    date_value = row_data["date"]
-    if isinstance(date_value, datetime):
-        ws.cell(row, 1).value = date_value
-        ws.cell(row, 1).number_format = DATE_FORMAT
-    elif date_value:
-        ws.cell(row, 1).value = date_value
+    if show_date:
+        date_value = row_data["date"]
+        if isinstance(date_value, datetime):
+            ws.cell(row, 1).value = date_value
+            ws.cell(row, 1).number_format = DATE_FORMAT
+        elif date_value:
+            ws.cell(row, 1).value = date_value
 
     ws.cell(row, 4).value = row_data["time"]
     ws.cell(row, 4).number_format = "General"

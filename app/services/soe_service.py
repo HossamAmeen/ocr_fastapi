@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from excel_soe.writer import (
+    collapse_repeated_row_dates,
     read_template_rig,
     soe_data_to_rows,
     sort_soe_rows,
@@ -258,13 +259,14 @@ def process_soe(
         template_path=template_path,
     )
 
+    display_rows = collapse_repeated_row_dates(sorted_rows)
     all_rows = [
         {
-            "date": _format_row_date(row["date"]),
+            "date": _format_row_date(row["date"]) if row.get("date") else "",
             "time": str(row["time"]),
             "event": str(row["event"]),
         }
-        for row in sorted_rows
+        for row in display_rows
     ]
 
     return pdf_summaries, all_rows, output_path, total_appended
