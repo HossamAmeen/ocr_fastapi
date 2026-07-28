@@ -240,6 +240,23 @@ body {
   font-size: 1.25rem;
 }
 
+.card-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.version-tag {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.08);
+}
+
 .field {
   display: flex;
   flex-direction: column;

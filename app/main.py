@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from app.config import APP_VERSION
 from app.routers import generate, job_order, proforma, soe
 
 APP_DIR = Path(__file__).resolve().parent
@@ -12,11 +13,12 @@ APP_DIR = Path(__file__).resolve().parent
 app = FastAPI(
     title="OCR Excel Generator",
     description="Upload PDFs and Excel templates to generate Proforma, SOE, and Job Order workbooks.",
-    version="1.1.0",
+    version=APP_VERSION,
 )
 
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
+templates.env.globals["app_version"] = APP_VERSION
 
 app.include_router(generate.router)
 app.include_router(proforma.router)
