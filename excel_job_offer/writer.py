@@ -19,7 +19,7 @@ TEXT_MERGE_END_COLUMN = 12  # column L
 ROW_BACKGROUND_LAST_COL = 22  # column V — full JOB ORDER procedure width
 STYLE_COLUMNS = tuple(range(1, 7))
 DEFAULT_TEMPLATE = Path("data.xlsm")
-_NUMBERED_LINE = re.compile(r"^(\d+(?:\.\d+)*)\s+(.+)$")
+_NUMBERED_LINE = re.compile(r"^(\d+(?:\.\d+)*)\.?\s*(.+)$")
 _STEP_NUMBER_VALUE = re.compile(r"^(\d+)\)?\s*$")
 _NO_FILL = PatternFill()
 _EMPTY_SIDE = Side()
@@ -112,7 +112,7 @@ def _prepare_row_values(text: str, source: str) -> tuple[str, str]:
 
 
 def _format_text(text: str, source: str) -> str:
-    if source in ("job_order_1c", "running_completion_summary"):
+    if source in ("job_order_1c", "running_completion_summary", "completion_procedure", "custom"):
         return text.upper()
     return text
 

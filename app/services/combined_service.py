@@ -29,6 +29,8 @@ def process_combined(
     soe_pdfs: list[tuple[Path, str]] | None = None,
     job_order_pdf: Path | None = None,
     job_order_source: str = "auto",
+    job_order_start_marker: str = "",
+    job_order_end_marker: str = "",
     soe_table_names: list[str] | None = None,
 ) -> tuple[dict, Path]:
     """Extract selected PDFs and write all sections into one Excel workbook."""
@@ -117,9 +119,19 @@ def process_combined(
         }
 
     if job_order_pdf:
-        data = extract_job_order_data(job_order_pdf, source=job_order_source)
+        data = extract_job_order_data(
+            job_order_pdf,
+            source=job_order_source,
+            start_marker=job_order_start_marker,
+            end_marker=job_order_end_marker,
+        )
         if not data.get("lines"):
             output_path.unlink(missing_ok=True)
+            if job_order_source == "custom":
+                raise ValueError(
+                    f"No procedure content found starting at {job_order_start_marker!r}. "
+                    "Check that the start text matches the PDF exactly."
+                )
             raise ValueError("No completion procedure content found in the Job Order PDF.")
 
         _, appended_rows = write_job_offer_table(output_path, output_path, data)

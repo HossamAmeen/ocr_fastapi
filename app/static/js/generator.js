@@ -11,6 +11,15 @@ const jobOrderInput = document.getElementById("job-order-pdf");
 const soeFilesInput = document.getElementById("soe-pdf-files");
 const soeFolderInput = document.getElementById("soe-pdf-folder");
 const jobOrderSourceInput = document.getElementById("job-order-source");
+const jobOrderCustomMarkers = document.getElementById("job-order-custom-markers");
+const jobOrderStartMarkerInput = document.getElementById("job-order-start-marker");
+const jobOrderEndMarkerInput = document.getElementById("job-order-end-marker");
+
+function updateJobOrderTemplateUi() {
+  const isCustom = jobOrderSourceInput.value === "custom";
+  jobOrderCustomMarkers.classList.toggle("hidden", !isCustom);
+  jobOrderStartMarkerInput.required = isCustom;
+}
 
 const excelFileNameEl = document.getElementById("excel-file-name");
 const proformaFileNameEl = document.getElementById("proforma-file-name");
@@ -97,6 +106,12 @@ function formatSource(source) {
   }
   if (source === "running") {
     return "Running completion";
+  }
+  if (source === "completion_procedure") {
+    return "Completion Procedure (SWI)";
+  }
+  if (source === "custom") {
+    return "Custom start/end";
   }
   if (source === "auto") {
     return "Auto-detect";
@@ -285,6 +300,9 @@ soeFolderInput.addEventListener("change", () => {
   clearStatus();
 });
 
+jobOrderSourceInput.addEventListener("change", updateJobOrderTemplateUi);
+updateJobOrderTemplateUi();
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   clearStatus();
@@ -310,8 +328,18 @@ form.addEventListener("submit", async (event) => {
     formData.append("proforma_pdf", proformaFile);
   }
   if (jobOrderFile) {
+    const jobSource = jobOrderSourceInput.value;
+    const jobStart = jobOrderStartMarkerInput.value.trim();
+    const jobEnd = jobOrderEndMarkerInput.value.trim();
+    if (jobSource === "custom" && !jobStart) {
+      setStatus("Job Order start text is required for the custom template.", "error");
+      updateJobOrderTemplateUi();
+      return;
+    }
+    formData.append("job_order_source", jobSource);
+    formData.append("job_order_start_marker", jobStart);
+    formData.append("job_order_end_marker", jobEnd);
     formData.append("job_order_pdf", jobOrderFile);
-    formData.append("job_order_source", jobOrderSourceInput.value);
   }
   selectedSoeFiles.forEach((file) => {
     formData.append("soe_pdfs", file);

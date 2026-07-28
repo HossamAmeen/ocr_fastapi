@@ -271,6 +271,15 @@ textarea {
   min-height: 4.5rem;
 }
 
+input[type="text"] {
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+
 button,
 .download-btn {
   display: inline-flex;

@@ -12,14 +12,16 @@ from app.services.job_order_service import process_job_order
 
 router = APIRouter(prefix="/api/job-order", tags=["job-order"])
 
-_ALLOWED_SOURCES = {"auto", "1c", "running"}
+_ALLOWED_SOURCES = {"auto", "1c", "running", "completion_procedure", "custom"}
 
 
 @router.post("/generate", response_model=JobOrderResponse)
 async def generate_job_order(
     pdf: UploadFile = File(..., description="Completion program PDF"),
     excel: UploadFile = File(..., description="Excel template (.xlsm)"),
-    source: str = Form(default="auto", description="Template: auto, 1c, or running"),
+    source: str = Form(default="auto", description="Template: auto, 1c, running, completion_procedure, or custom"),
+    start_marker: str = Form(default="", description="Custom start text (required when source=custom)"),
+    end_marker: str = Form(default="", description="Optional custom end text"),
 ) -> JobOrderResponse:
     if not pdf.filename or not pdf.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="PDF file is required.")
@@ -28,7 +30,12 @@ async def generate_job_order(
     if source not in _ALLOWED_SOURCES:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid source {source!r}. Use auto, 1c, or running.",
+            detail=f"Invalid source {source!r}. Use auto, 1c, running, completion_procedure, or custom.",
+        )
+    if source == "custom" and not start_marker.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Start text is required when using the custom template.",
         )
 
     job_id = uuid.uuid4().hex[:12]
@@ -44,6 +51,8 @@ async def generate_job_order(
             pdf_path,
             excel_path,
             source=source,
+            start_marker=start_marker.strip(),
+            end_marker=end_marker.strip(),
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

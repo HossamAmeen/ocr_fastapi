@@ -21,7 +21,7 @@ from app.services.soe_service import parse_table_names
 
 router = APIRouter(prefix="/api/generate", tags=["generate"])
 
-_ALLOWED_JOB_ORDER_SOURCES = {"auto", "1c", "running"}
+_ALLOWED_JOB_ORDER_SOURCES = {"auto", "1c", "running", "completion_procedure", "custom"}
 
 
 @router.post("", response_model=CombinedResponse)
@@ -29,7 +29,9 @@ async def generate_workbook(
     excel: UploadFile = File(..., description="Excel template (.xlsm)"),
     proforma_pdf: UploadFile | None = File(None, description="Purchase order PDF"),
     job_order_pdf: UploadFile | None = File(None, description="Completion program PDF"),
-    job_order_source: str = Form(default="auto", description="Job Order template: auto, 1c, or running"),
+    job_order_source: str = Form(default="auto", description="Job Order template"),
+    job_order_start_marker: str = Form(default="", description="Custom Job Order start text"),
+    job_order_end_marker: str = Form(default="", description="Custom Job Order end text"),
     soe_pdfs: list[UploadFile] = File(default=[], description="SOE report PDFs"),
     soe_pdf_names: list[str] = Form(default=[], description="Display names for SOE PDFs"),
     soe_table_names: list[str] = Form(default=[], description="SOE table titles to extract"),
@@ -39,12 +41,18 @@ async def generate_workbook(
     if job_order_source not in _ALLOWED_JOB_ORDER_SOURCES:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid job_order_source {job_order_source!r}. Use auto, 1c, or running.",
+            detail=f"Invalid job_order_source {job_order_source!r}. Use auto, 1c, running, completion_procedure, or custom.",
         )
 
     has_proforma = proforma_pdf is not None and proforma_pdf.filename
     has_job_order = job_order_pdf is not None and job_order_pdf.filename
     has_soe = bool(soe_pdfs)
+
+    if has_job_order and job_order_source == "custom" and not job_order_start_marker.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Job Order start text is required when using the custom template.",
+        )
 
     if not has_proforma and not has_job_order and not has_soe:
         raise HTTPException(
@@ -96,6 +104,8 @@ async def generate_workbook(
             soe_pdfs=soe_entries or None,
             job_order_pdf=job_order_path,
             job_order_source=job_order_source,
+            job_order_start_marker=job_order_start_marker.strip(),
+            job_order_end_marker=job_order_end_marker.strip(),
             soe_table_names=parse_table_names(soe_table_names) if soe_entries else None,
         )
     except ValueError as exc:

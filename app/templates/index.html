@@ -111,8 +111,36 @@ Job Time Log</textarea>
                 <option value="auto" selected>Auto-detect</option>
                 <option value="1c">1-C procedure (detailed lines)</option>
                 <option value="running">Running completion</option>
+                <option value="completion_procedure">Completion Procedure (SWI)</option>
+                <option value="custom">Custom (enter start text)</option>
               </select>
             </label>
+            <div id="job-order-custom-markers" class="hidden">
+              <label class="field">
+                <span>Start text</span>
+                <input
+                  type="text"
+                  id="job-order-start-marker"
+                  name="job_order_start_marker"
+                  placeholder="Completion Procedure"
+                />
+                <p class="field-hint">
+                  Exact phrase where extraction begins (case-insensitive).
+                </p>
+              </label>
+              <label class="field">
+                <span>End text (optional)</span>
+                <input
+                  type="text"
+                  id="job-order-end-marker"
+                  name="job_order_end_marker"
+                  placeholder="CT OPERATION FOR MILLING GLASS DISC"
+                />
+                <p class="field-hint">
+                  Stop before this phrase. Leave empty to read until the end of the PDF.
+                </p>
+              </label>
+            </div>
           </section>
 
           <p class="submit-hint">At least one PDF section above is required.</p>
@@ -197,6 +225,6 @@ Job Time Log</textarea>
     </main>
   </div>
 
-  <script src="/static/js/generator.js"></script>
+  <script src="/static/js/generator.js?v=2"></script>
 </body>
 </html>

@@ -36,22 +36,76 @@ RUNNING_PROCEDURE_END = re.compile(
     re.IGNORECASE,
 )
 
+# ADNOC SWI running completion instructions (e.g. "Completion Procedure" checklist)
+COMPLETION_PROCEDURE_START = "Completion Procedure"
+COMPLETION_PROCEDURE_END_MARKERS = (
+    "CT OPERATION FOR MILLING GLASS DISC",
+)
+
 _HEADER_LINE = re.compile(
     r"^(?:"
     r"ADNOC Classification:.*"
     r"|#"
     r"|UPPER COMPLETION PROGRAM"
+    r"|UPPER COMPLETION INSTRUCTIONS(?:\s*\(SWI\))?"
     r"|COMPLETION PROGRAM"
     r"|COMP_[A-Z0-9_]+\(program\).*"
     r"|Page \d+ of \d+"
+    r"|WELL .+ Page \d+ of \d+"
     r"|AD-\d+\s+BB-\d+\s+OP\d+/\w+"
     r"|Packer Tests, X-mass Tree installation"
     r"|Gauge Cutter Run"
+    r"|R U N I N G C O M P L ETION"
+    r"|RUNNING COMPLETION"
+    r"|CATEGORY:.*"
+    r"|DOC REF #.*"
+    r"|ISSUED:.*"
+    r"|QTY\s*THREAD\s*DESCRIPTION"
+    r"|THREAD\s*DESCRIPTION"
+    r"|^Note:$"
+    r"|^Minimum\s*:"
+    r"|^Optimum\s*:"
+    r"|^Maximum\s*:"
+    r"|^SUB-ASSEMBLY\b"
+    r"|^SEAL TEST PORT"
+    r"|^HOLD POINT"
+    r"|^DESCRIPTION\s+FUNCTION\b"
     r")$",
     re.IGNORECASE,
 )
 _STEP_LINE = re.compile(r"^\d+(?:\.\d+)+\s+")
 _NUMBERED_STEP = re.compile(r"^\d+\s+")
+_NUMBERED_STEP_DOT = re.compile(r"^\d+\.\s*")
+
+
+def _find_section_by_markers(
+    text: str,
+    start_marker: str,
+    end_markers: tuple[str, ...] | list[str] = (),
+) -> str:
+    """Return PDF text from start_marker until the first end_marker (or EOF)."""
+    start_marker = start_marker.strip()
+    if not start_marker:
+        return ""
+
+    start = text.find(start_marker)
+    if start < 0:
+        start = text.casefold().find(start_marker.casefold())
+        if start < 0:
+            return ""
+
+    end = len(text)
+    search_from = start + len(start_marker)
+    for marker in end_markers:
+        cleaned = str(marker).strip()
+        if not cleaned:
+            continue
+        index = text.find(cleaned, search_from)
+        if index < 0:
+            index = text.casefold().find(cleaned.casefold(), search_from)
+        if index >= 0:
+            end = min(end, index)
+    return text[start:end].strip()
 
 
 def _find_start_1c(text: str) -> int:
@@ -119,6 +173,43 @@ def _find_running_procedure_section(text: str) -> str:
     return text[start : end_match.start()].strip()
 
 
+def _find_completion_procedure_section(text: str) -> str:
+    return _find_section_by_markers(text, COMPLETION_PROCEDURE_START, COMPLETION_PROCEDURE_END_MARKERS)
+
+
+def extract_custom_section(
+    pdf_path: str | Path,
+    *,
+    start_marker: str,
+    end_marker: str = "",
+) -> dict[str, Any]:
+    """Extract procedure lines using user-provided start/end text markers."""
+    pdf_path = Path(pdf_path)
+    text = _extract_raw_text(pdf_path)
+    end_markers = (end_marker,) if end_marker.strip() else ()
+    section = _find_section_by_markers(text, start_marker, end_markers)
+    if not section:
+        return _build_result(pdf_path, "custom", [])
+
+    merged_lines = _extract_section_lines(section, numbered_steps=True)
+    return _build_result(pdf_path, "custom", merged_lines)
+
+
+def get_template_markers(source: str) -> tuple[str, tuple[str, ...]]:
+    """Return the start and end markers used by a built-in template."""
+    if source == "1c":
+        return START_MARKERS_1C[0], END_MARKERS_1C
+    if source == "running":
+        return "Running Completion", (
+            "32 Perform final tests of TR-SCSSSV",
+            "4 SECURE WELL AND RELEASE RIG",
+            RUNNING_SUMMARY_END,
+        )
+    if source == "completion_procedure":
+        return COMPLETION_PROCEDURE_START, COMPLETION_PROCEDURE_END_MARKERS
+    return "", ()
+
+
 def _is_header_line(line: str) -> bool:
     return bool(_HEADER_LINE.match(line.strip()))
 
@@ -130,6 +221,8 @@ def _is_new_item(line: str, numbered_steps: bool = False) -> bool:
     if _STEP_LINE.match(stripped):
         return True
     if numbered_steps and _NUMBERED_STEP.match(stripped):
+        return True
+    if numbered_steps and _NUMBERED_STEP_DOT.match(stripped):
         return True
     return stripped.startswith(("*", "!", "~", "-", "•", "o "))
 
@@ -220,6 +313,18 @@ def extract_running_completion(pdf_path: str | Path) -> dict[str, Any]:
     return _build_result(pdf_path, "running_completion", [])
 
 
+def extract_completion_procedure(pdf_path: str | Path) -> dict[str, Any]:
+    """Extract ADNOC SWI running completion steps from a Completion Procedure section."""
+    pdf_path = Path(pdf_path)
+    text = _extract_raw_text(pdf_path)
+    section = _find_completion_procedure_section(text)
+    if not section:
+        return _build_result(pdf_path, "completion_procedure", [])
+
+    merged_lines = _extract_section_lines(section, numbered_steps=True)
+    return _build_result(pdf_path, "completion_procedure", merged_lines)
+
+
 def detect_job_order_source(text: str) -> str:
     """Detect which job order template is present in the PDF text."""
     if _find_start_1c(text) >= 0:
@@ -231,23 +336,42 @@ def detect_job_order_source(text: str) -> str:
         return "running"
     if summary:
         return "running"
+    if COMPLETION_PROCEDURE_START in text:
+        return "completion_procedure"
     return "unknown"
 
 
 def extract_job_order_data(
     pdf_path: str | Path,
     source: str = "auto",
+    *,
+    start_marker: str = "",
+    end_marker: str = "",
 ) -> dict[str, Any]:
     """Extract job order data using the requested or detected template."""
     pdf_path = Path(pdf_path)
     text = _extract_raw_text(pdf_path)
+
+    if source == "custom":
+        if not start_marker.strip():
+            return _build_result(pdf_path, "custom", [])
+        return extract_custom_section(
+            pdf_path,
+            start_marker=start_marker,
+            end_marker=end_marker,
+        )
 
     selected = source if source != "auto" else detect_job_order_source(text)
     if selected == "1c":
         return extract_job_order_procedure(pdf_path)
     if selected == "running":
         return extract_running_completion(pdf_path)
+    if selected == "completion_procedure":
+        return extract_completion_procedure(pdf_path)
 
+    data = extract_completion_procedure(pdf_path)
+    if data["lines"]:
+        return data
     data = extract_running_completion(pdf_path)
     if data["lines"]:
         return data

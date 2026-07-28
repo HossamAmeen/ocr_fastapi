@@ -46,8 +46,40 @@
               <option value="auto" selected>Auto-detect</option>
               <option value="1c">1-C procedure (detailed lines)</option>
               <option value="running">Running completion</option>
+              <option value="completion_procedure">Completion Procedure (SWI)</option>
+              <option value="custom">Custom (enter start text)</option>
             </select>
+            <p class="field-hint" id="template-hint">
+              Auto-detect scans the PDF and picks the first matching built-in template.
+            </p>
           </label>
+
+          <div id="custom-markers" class="hidden">
+            <label class="field">
+              <span>Start text</span>
+              <input
+                type="text"
+                id="start-marker"
+                name="start_marker"
+                placeholder="Completion Procedure"
+              />
+              <p class="field-hint">
+                Exact phrase where extraction should begin (case-insensitive match).
+              </p>
+            </label>
+            <label class="field">
+              <span>End text (optional)</span>
+              <input
+                type="text"
+                id="end-marker"
+                name="end_marker"
+                placeholder="CT OPERATION FOR MILLING GLASS DISC"
+              />
+              <p class="field-hint">
+                Stop before this phrase. Leave empty to read until the end of the PDF.
+              </p>
+            </label>
+          </div>
 
           <button type="submit" id="submit-btn">Generate Job Order</button>
         </form>
@@ -78,6 +110,6 @@
     </main>
   </div>
 
-  <script src="/static/js/job_order.js"></script>
+  <script src="/static/js/job_order.js?v=2"></script>
 </body>
 </html>

@@ -5,6 +5,24 @@ const resultsCard = document.getElementById("results-card");
 const summaryEl = document.getElementById("summary");
 const linesTableBody = document.querySelector("#lines-table tbody");
 const downloadLink = document.getElementById("download-link");
+const sourceSelect = document.getElementById("source");
+const templateHint = document.getElementById("template-hint");
+const customMarkers = document.getElementById("custom-markers");
+const startMarkerInput = document.getElementById("start-marker");
+const endMarkerInput = document.getElementById("end-marker");
+
+const TEMPLATE_HINTS = {
+  auto:
+    "Auto-detect scans the PDF and picks the first matching built-in template.",
+  "1c":
+    'Start: "1-C Upper Completion - Running Procedure". End: "1-D Additional Information" or "The final report requested...".',
+  running:
+    'Start: "Running Completion" (line start). End: "32 Perform final tests of TR-SCSSSV" or "4 SECURE WELL AND RELEASE RIG".',
+  completion_procedure:
+    'Start: "Completion Procedure". End: "CT OPERATION FOR MILLING GLASS DISC" (or end of PDF).',
+  custom:
+    "Enter the exact start phrase from your PDF below. Optionally add an end phrase.",
+};
 
 function setStatus(message, type = "info") {
   statusEl.textContent = message;
@@ -16,12 +34,26 @@ function clearStatus() {
   statusEl.classList.add("hidden");
 }
 
+function updateTemplateUi() {
+  const source = sourceSelect.value;
+  const isCustom = source === "custom";
+  templateHint.textContent = TEMPLATE_HINTS[source] || "";
+  customMarkers.classList.toggle("hidden", !isCustom);
+  startMarkerInput.required = isCustom;
+}
+
 function formatSource(source) {
   if (source === "1c") {
     return "1-C procedure";
   }
   if (source === "running") {
     return "Running completion";
+  }
+  if (source === "completion_procedure") {
+    return "Completion Procedure (SWI)";
+  }
+  if (source === "custom") {
+    return "Custom start/end";
   }
   if (source === "auto") {
     return "Auto-detect";
@@ -65,23 +97,36 @@ function renderResults(data) {
   resultsCard.classList.remove("hidden");
 }
 
+sourceSelect.addEventListener("change", updateTemplateUi);
+updateTemplateUi();
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   clearStatus();
 
   const pdfFile = document.getElementById("pdf-file").files[0];
   const excelFile = document.getElementById("excel-file").files[0];
-  const source = document.getElementById("source").value;
+  const source = sourceSelect.value;
+  const startMarker = startMarkerInput.value.trim();
+  const endMarker = endMarkerInput.value.trim();
 
   if (!pdfFile || !excelFile) {
     setStatus("Please select a PDF and an Excel template.", "error");
     return;
   }
 
+  if (source === "custom" && !startMarker) {
+    setStatus("Start text is required for the custom template.", "error");
+    updateTemplateUi();
+    return;
+  }
+
   const formData = new FormData();
+  formData.append("source", source);
+  formData.append("start_marker", startMarker);
+  formData.append("end_marker", endMarker);
   formData.append("pdf", pdfFile);
   formData.append("excel", excelFile);
-  formData.append("source", source);
 
   submitBtn.disabled = true;
   submitBtn.textContent = "Processing...";

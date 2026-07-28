@@ -14,10 +14,23 @@ def process_job_order(
     pdf_path: Path,
     template_path: Path,
     source: str = "auto",
+    *,
+    start_marker: str = "",
+    end_marker: str = "",
 ) -> tuple[dict, list[dict], Path, int]:
     """Extract completion procedure from PDF and append to the JOB ORDER sheet."""
-    data = extract_job_order_data(pdf_path, source=source)
+    data = extract_job_order_data(
+        pdf_path,
+        source=source,
+        start_marker=start_marker,
+        end_marker=end_marker,
+    )
     if not data.get("lines"):
+        if source == "custom":
+            raise ValueError(
+                f"No procedure content found starting at {start_marker!r}. "
+                "Check that the start text matches the PDF exactly."
+            )
         raise ValueError("No completion procedure content found in the uploaded PDF.")
 
     suffix = template_path.suffix.lower()
