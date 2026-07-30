@@ -4,7 +4,7 @@ import shutil
 import uuid
 from pathlib import Path
 
-from excel_job_offer.writer import write_job_offer_table
+from excel_job_offer.writer import write_job_offer_table, _prepare_row_values
 from extract_job_order import extract_job_order_data
 
 from app.config import OUTPUT_DIR
@@ -40,7 +40,11 @@ def process_job_order(
 
     _, appended_rows = write_job_offer_table(output_path, output_path, data)
     lines = [
-        {"line_no": row["line_no"], "text": row["text"]}
+        {
+            "line_no": row["line_no"],
+            "text": row["text"],
+            "kind": _prepare_row_values(row["text"], data.get("source", ""))[0]
+        }
         for row in data["lines"]
     ]
     return data, lines, output_path, appended_rows

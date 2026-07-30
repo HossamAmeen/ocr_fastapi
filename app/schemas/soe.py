@@ -27,3 +27,4 @@ class SoeResponse(BaseModel):
     pdf_count: int = Field(description="Number of PDFs processed")
     download_url: str
     filename: str
+    rig_filter: str = ""

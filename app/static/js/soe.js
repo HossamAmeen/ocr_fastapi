@@ -70,6 +70,9 @@ function formatSource(source) {
   if (source === "time_log") {
     return "Time Log";
   }
+  if (source === "job_time_log") {
+    return "Job Time Log";
+  }
   return source || "-";
 }
 
@@ -120,6 +123,11 @@ function renderResults(data) {
       <span>Rows appended</span>
       <strong>${data.row_count}</strong>
     </div>
+    ${data.rig_filter ? `
+    <div class="summary-item">
+      <span>Rig filter (from Excel)</span>
+      <strong>${data.rig_filter}</strong>
+    </div>` : ""}
     <div class="summary-item">
       <span>Output file</span>
       <strong>${data.filename}</strong>

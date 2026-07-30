@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from excel_job_offer.writer import write_job_offer_table
+from excel_job_offer.writer import write_job_offer_table, _prepare_row_values
 from excel_proforma.writer import write_proforma_table
 from excel_soe.writer import collapse_repeated_row_dates, read_template_rig, soe_data_to_rows, sort_soe_rows, write_soe_rows
 from extract_job_order import extract_job_order_data
@@ -141,7 +141,11 @@ def process_combined(
             "section_title": str(data.get("section_title") or ""),
             "source": str(data.get("source") or job_order_source),
             "lines": [
-                {"line_no": row["line_no"], "text": row["text"]}
+                {
+                    "line_no": row["line_no"],
+                    "text": row["text"],
+                    "kind": _prepare_row_values(row["text"], data.get("source", ""))[0]
+                }
                 for row in data["lines"]
             ],
             "line_count": appended_rows,

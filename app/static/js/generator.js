@@ -167,8 +167,8 @@ function renderResults(data) {
 
   summaryEl.innerHTML = `
     <div class="summary-item">
-      <span>Sections</span>
-      <strong>${data.processed_sections.join(", ")}</strong>
+      <span>Sections processed</span>
+      <strong>${data.processed_sections.map(s => `<span class="section-badge">${s}</span>`).join(" ")}</strong>
     </div>
     <div class="summary-item">
       <span>Output file</span>
@@ -216,6 +216,11 @@ function renderResults(data) {
         <span>SOE rows</span>
         <strong>${data.soe.row_count}</strong>
       </div>
+      ${data.soe.rig_filter ? `
+      <div class="summary-item">
+        <span>SOE Rig filter</span>
+        <strong>${data.soe.rig_filter}</strong>
+      </div>` : ""}
     `;
     document.querySelector("#soe-summary-table tbody").innerHTML = data.soe.pdf_summaries
       .map(
@@ -258,6 +263,7 @@ function renderResults(data) {
         (line) => `
           <tr>
             <td class="num">${line.line_no || ""}</td>
+            <td class="kind">${line.kind || "text"}</td>
             <td class="desc">${line.text.replace(/\n/g, "<br>")}</td>
           </tr>
         `

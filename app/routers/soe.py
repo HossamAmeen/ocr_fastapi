@@ -50,7 +50,7 @@ async def generate_soe(
 
         excel_path.write_bytes(await excel.read())
         parsed_table_names = parse_table_names(table_names)
-        pdf_summaries, rows, output_path, row_count = process_soe(
+        pdf_summaries, rows, output_path, row_count, rig_filter = process_soe(
             pdf_entries,
             excel_path,
             table_names=parsed_table_names,
@@ -74,6 +74,7 @@ async def generate_soe(
         pdf_count=len(pdfs),
         download_url=f"/api/soe/download/{filename}",
         filename=filename,
+        rig_filter=rig_filter,
     )
 
 

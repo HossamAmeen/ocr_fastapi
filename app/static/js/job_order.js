@@ -86,6 +86,7 @@ function renderResults(data) {
       (line) => `
         <tr>
           <td class="num">${line.line_no || ""}</td>
+          <td class="kind">${line.kind || "text"}</td>
           <td class="desc">${line.text.replace(/\n/g, "<br>")}</td>
         </tr>
       `

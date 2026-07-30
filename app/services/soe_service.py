@@ -164,7 +164,7 @@ def process_soe(
     template_path: Path,
     *,
     table_names: list[str] | None = None,
-) -> tuple[list[dict], list[dict], Path, int]:
+) -> tuple[list[dict], list[dict], Path, int, str]:
     """Extract time logs from multiple PDFs and write them into one Excel workbook.
 
     When the Excel template has a Rig value, every PDF page whose ``Rig:``
@@ -227,4 +227,4 @@ def process_soe(
         for row in display_rows
     ]
 
-    return pdf_summaries, all_rows, output_path, total_appended
+    return pdf_summaries, all_rows, output_path, total_appended, rig_filter or ""
