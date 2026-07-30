@@ -73,7 +73,7 @@ def _pdf_summary(data: dict, filename: str, row_count: int, skipped: bool) -> di
 def _format_table_names(table_names: list[str] | None) -> list[str]:
     if table_names:
         return table_names
-    return ["Time Log", "Job Time Log"]
+    return ["Time Log", "Job Time Log", "Operational Time Summary"]
 
 
 def _build_no_rows_error(
@@ -95,7 +95,6 @@ def _build_no_rows_error(
             if str(summary.get("rig") or "").strip()
         }
     )
-    # Expand comma-separated rig lists from multi-page PDF summaries.
     expanded_rigs: list[str] = []
     for rig in pdf_rigs:
         for part in rig.split(","):
@@ -105,97 +104,56 @@ def _build_no_rows_error(
     rigs_text = ", ".join(expanded_rigs) if expanded_rigs else "none detected"
 
     lines = [
-        "No time-log rows could be extracted from the uploaded PDFs.",
+        "Could not extract time-log rows from the uploaded PDFs.",
         "",
-        f"PDFs checked: {pdf_count}",
-        f"Table names searched: {', '.join(table_list)}",
     ]
-
-    if rig_filter:
-        lines.append(f"Excel Rig filter: {rig_filter}")
-        lines.append(f"Rigs found in PDFs: {rigs_text}")
-        rig_matches = any(
-            rigs_match(rig_filter, rig)
-            for rig in pdf_rigs
-        )
-    else:
-        lines.append(f"Rigs found in PDFs: {rigs_text}")
-        rig_matches = False
-
-    lines.append("")
 
     if rig_mismatch:
         lines.extend(
             [
-                "What went wrong:",
-                f"- No pages matched the Excel Rig filter ({rig_filter!r}).",
-                f"- Rigs found across PDF pages: {rigs_text}.",
+                "Cause: Rig mismatch detected.",
+                f"• Excel Rig filter: {rig_filter}",
+                f"• Rigs found in PDFs: {rigs_text}",
                 "",
-                "What to do:",
-                "- The PDF is scanned page by page; only pages whose Rig matches Excel are used.",
-                "- Set the SOE sheet Rig cell to one of the rig codes listed above.",
-                "- Or clear the Rig cell to extract from all pages/rigs.",
+                "Solution:",
+                "• Change the Rig name in the Excel template to match one of the PDF rigs above.",
+                "• Or leave the Rig cell empty in Excel to extract from all rigs.",
             ]
         )
         return "\n".join(lines)
 
-    if rig_filter and rig_matches:
+    if no_table:
         lines.extend(
             [
-                "What went wrong:",
-                f"- The Excel Rig ({rig_filter!r}) matches the PDF ({rigs_text}), "
-                "so this is not a Rig mismatch.",
-                f"- {len(no_table)} PDF(s) had no table matching: {', '.join(table_list)}.",
-            ]
-        )
-        if empty_table:
-            lines.append(
-                f"- {len(empty_table)} PDF(s) had a matching table title but no data rows."
-            )
-        lines.extend(
-            [
+                "Cause: No tables matching the specified names were found in the PDFs.",
+                f"• Tables searched: {', '.join(table_list)}",
+                f"• PDFs checked: {pdf_count}",
                 "",
-                "What to do:",
-                "- Check the exact table title in your PDF and add it to the "
-                "'Table names to extract' list.",
-                "- Common titles: Time Log, Job Time Log, Operational Time Summary.",
+                "Solution:",
+                "• Check the table heading title in your PDF file.",
+                "• Add that exact table title to 'Table names to extract'.",
             ]
         )
-        if no_table:
-            lines.append("")
-            lines.append("PDFs with no matching table:")
-            for summary in no_table[:8]:
-                lines.append(f"  • {summary['filename']}")
-            if len(no_table) > 8:
-                lines.append(f"  • …and {len(no_table) - 8} more")
         return "\n".join(lines)
 
-    if no_table or empty_table:
+    if empty_table:
         lines.extend(
             [
-                "What went wrong:",
-                f"- No PDF contained a table matching: {', '.join(table_list)}.",
-            ]
-        )
-        if empty_table:
-            lines.append("- Some PDFs had a matching title but the table was empty.")
-        lines.extend(
-            [
+                "Cause: The table title was found, but it contained no valid data rows.",
                 "",
-                "What to do:",
-                "- Add the exact table title from your PDF to 'Table names to extract'.",
+                "Solution:",
+                "• Ensure the PDF contains readable text and valid data rows.",
             ]
         )
         return "\n".join(lines)
 
     lines.extend(
         [
-            "What went wrong:",
-            "- The PDFs were read, but no time-log rows were found.",
+            "Cause: No valid time-log data could be extracted.",
             "",
-            "What to do:",
-            "- Confirm the PDF contains a time-log table.",
-            "- Add the exact table title to 'Table names to extract'.",
+            "Solution:",
+            "• Confirm that the uploaded PDFs contain a time-log table.",
+            "• Check 'Table names to extract' and add the exact title from the PDF.",
         ]
     )
     return "\n".join(lines)

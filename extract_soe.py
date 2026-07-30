@@ -195,7 +195,7 @@ def _parse_time_log_row(line: str, time_column: str) -> dict[str, Any] | None:
     )
 
 
-_DEFAULT_TABLE_NAMES = ("Time Log", "Job Time Log")
+_DEFAULT_TABLE_NAMES = ("Time Log", "Job Time Log", "Operational Time Summary")
 _OPERATIONAL_TIME_SUMMARY = "Operational Time Summary"
 
 

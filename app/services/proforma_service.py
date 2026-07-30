@@ -13,7 +13,11 @@ def process_proforma(pdf_path: Path, template_path: Path) -> tuple[list[dict], P
     """Extract items from PDF and write them into the Excel template."""
     items = extract_proforma_items(pdf_path)
     if not items:
-        raise ValueError("No Proforma line items found in the uploaded PDF.")
+        raise ValueError(
+            "Could not extract Proforma line items from the uploaded PDF.\n\n"
+            "Solution:\n"
+            "• Ensure the uploaded file is a valid Proforma Purchase Order PDF containing price items."
+        )
 
     for index, item in enumerate(items, start=1):
         item.setdefault("sno", index)

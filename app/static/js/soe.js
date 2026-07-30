@@ -95,6 +95,8 @@ function formatSkipReason(summary) {
   }
   return "Skipped";
 }
+
+function formatPeriod(summary) {
   if (summary.report_period_from) {
     return `${summary.report_period_from}${summary.report_period_to ? ` to ${summary.report_period_to}` : ""}`;
   }
