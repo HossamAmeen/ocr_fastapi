@@ -20,7 +20,6 @@ ROW_BACKGROUND_LAST_COL = 22  # column V — full JOB ORDER procedure width
 STYLE_COLUMNS = tuple(range(1, 7))
 DEFAULT_TEMPLATE = Path("data.xlsm")
 _NUMBERED_LINE = re.compile(r"^(\d+(?:\.\d+)*)\.?\s*(.+)$")
-_STEP_NUMBER_VALUE = re.compile(r"^(\d+)\)?\s*$")
 _NO_FILL = PatternFill()
 _EMPTY_SIDE = Side()
 _WHITE_BACKGROUND_REFERENCE_ROW = 108
@@ -57,7 +56,6 @@ def write_job_offer_table(
 
     write_row = _find_next_row(ws)
     previous_end_row = write_row - 1
-    last_step = _find_last_step_number(ws, write_row)
     ws.insert_rows(write_row, amount=len(lines))
 
     for index, line in enumerate(lines):
@@ -69,8 +67,6 @@ def write_job_offer_table(
             row,
             kind,
             col_c,
-            write_row=write_row,
-            last_step=last_step,
             numbered=kind == "step",
         )
 
@@ -138,14 +134,21 @@ def _split_numbered_line(text: str) -> tuple[str | None, str]:
     return number, body
 
 
-def _step_order_formula(write_row: int, row: int, last_step: int) -> str:
-    """Continue numbering from existing steps above; skip bullets/sections in appended rows."""
-    if row == write_row:
-        return f"={last_step + 1}"
-    return (
-        f"={last_step}+COUNTIF($A${write_row}:A{row - 1},\">0\")"
-        f"+COUNTIF($A${write_row}:A{row - 1},\"*)\")+1"
-    )
+def _step_order_formula(row: int) -> str:
+    """Continue numbering from the last numbered row above, not the highest number.
+
+    LOOKUP(9.99E+307, range) is the standard "last numeric value in a range"
+    trick: LOOKUP requires an ascending sort and silently falls back to the
+    last number it can find that is <= the lookup value, so with an
+    impossibly large lookup value it always returns the last numeric cell in
+    the range (ignoring text and blanks in between). Using the *last* numbered
+    row (rather than MAX) means inserting, deleting, or editing rows above -
+    including out-of-order edits - still continues numbering from whatever
+    row is now immediately above, and every row below that also uses this
+    formula recalculates automatically in Excel/LibreOffice.
+    """
+    lookup_range = f"$A$1:A{row - 1}"
+    return f"=LOOKUP(9.99E+307,{lookup_range})+1"
 
 
 def _write_formatted_row(
@@ -154,8 +157,6 @@ def _write_formatted_row(
     kind: str,
     col_c: str,
     *,
-    write_row: int,
-    last_step: int,
     numbered: bool,
 ) -> None:
     template_row = _STYLE_TEMPLATE_ROWS.get(kind, _STYLE_TEMPLATE_ROWS["text"])
@@ -164,7 +165,7 @@ def _write_formatted_row(
     _copy_row_layout(ws, template_row, row)
 
     if numbered:
-        ws.cell(row, NUMBER_COLUMN).value = _step_order_formula(write_row, row, last_step)
+        ws.cell(row, NUMBER_COLUMN).value = _step_order_formula(row)
     else:
         ws.cell(row, NUMBER_COLUMN).value = None
     ws.cell(row, TEXT_COLUMN).value = col_c
@@ -318,29 +319,6 @@ def _find_next_row(ws: Worksheet) -> int:
         if any(_cell_value(ws, row, col) for col in range(1, 7)):
             last_row = row
     return last_row + 1
-
-
-def _parse_step_number(value: Any) -> int | None:
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        number = int(value)
-        return number if number > 0 else None
-    if isinstance(value, str):
-        match = _STEP_NUMBER_VALUE.match(value.strip())
-        if match:
-            return int(match.group(1))
-    return None
-
-
-def _find_last_step_number(ws: Worksheet, before_row: int) -> int:
-    """Highest step number already present above the append point."""
-    last_step = 0
-    for row in range(1, before_row):
-        step = _parse_step_number(_cell_value(ws, row, NUMBER_COLUMN))
-        if step is not None:
-            last_step = max(last_step, step)
-    return last_step
 
 
 def _cell_value(ws: Worksheet, row: int, col: int) -> Any:
