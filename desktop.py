@@ -6,7 +6,8 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QFileDialog, QComboBox, QProgressBar,
-    QMessageBox, QFrame, QListWidget, QStyle, QSizePolicy, QPlainTextEdit
+    QMessageBox, QFrame, QListWidget, QStyle, QSizePolicy, QPlainTextEdit,
+    QLineEdit
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize
 from PyQt6.QtGui import QFont, QIcon
@@ -14,6 +15,7 @@ from PyQt6.QtGui import QFont, QIcon
 # Adjust system path to import app services correctly from root directory
 sys.path.append(str(Path(__file__).resolve().parent))
 
+from app.config import APP_VERSION
 from app.services.combined_service import process_combined
 from app.services.soe_service import parse_table_names
 
@@ -33,6 +35,8 @@ class WorkerThread(QThread):
         soe_entries: list[tuple[Path, str]] | None,
         job_order_path: Path | None,
         job_order_source: str,
+        job_order_start_marker: str = "",
+        job_order_end_marker: str = "",
         soe_table_names: list[str] | None = None
     ):
         super().__init__()
@@ -41,6 +45,8 @@ class WorkerThread(QThread):
         self.soe_entries = soe_entries
         self.job_order_path = job_order_path
         self.job_order_source = job_order_source
+        self.job_order_start_marker = job_order_start_marker
+        self.job_order_end_marker = job_order_end_marker
         self.soe_table_names = soe_table_names
 
     def run(self):
@@ -51,6 +57,8 @@ class WorkerThread(QThread):
                 soe_pdfs=self.soe_entries,
                 job_order_pdf=self.job_order_path,
                 job_order_source=self.job_order_source,
+                job_order_start_marker=self.job_order_start_marker,
+                job_order_end_marker=self.job_order_end_marker,
                 soe_table_names=self.soe_table_names,
             )
             self.finished_signal.emit(result_data, str(output_path))
@@ -61,9 +69,17 @@ class WorkerThread(QThread):
 
 
 class MainWindow(QMainWindow):
+    _TEMPLATE_HINTS = {
+        "auto": "Auto-detect scans the PDF and picks the first matching built-in template.",
+        "1c": 'Start: "1-C Upper Completion - Running Procedure". End: "1-D Additional Information".',
+        "running": 'Start: "Running Completion" (line start). End: "32 Perform final tests of TR-SCSSSV".',
+        "completion_procedure": 'Start: "Completion Procedure". End: "CT OPERATION FOR MILLING GLASS DISC" (or end of PDF).',
+        "custom": "Enter the exact start phrase from your PDF below. Optionally add an end phrase.",
+    }
+
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("OCR Excel Generator - Desktop")
+        self.setWindowTitle(f"OCR Excel Generator v{APP_VERSION} - Desktop")
         self.setMinimumSize(900, 680)
         self.resize(1020, 750)
 
@@ -95,7 +111,7 @@ class MainWindow(QMainWindow):
         eyebrow.setObjectName("eyebrow")
         header_layout.addWidget(eyebrow)
 
-        title = QLabel("Excel Workbook Generator")
+        title = QLabel(f"Excel Workbook Generator  v{APP_VERSION}")
         title.setObjectName("main-title")
         header_layout.addWidget(title)
 
@@ -225,10 +241,48 @@ class MainWindow(QMainWindow):
         self.combo_job_template.addItem("Auto-detect", "auto")
         self.combo_job_template.addItem("1-C procedure (detailed lines)", "1c")
         self.combo_job_template.addItem("Running completion", "running")
+        self.combo_job_template.addItem("Completion Procedure (SWI)", "completion_procedure")
+        self.combo_job_template.addItem("Custom start/end text", "custom")
         template_layout.addWidget(template_lbl)
         template_layout.addWidget(self.combo_job_template)
         template_layout.addStretch()
         job_layout.addLayout(template_layout)
+
+        # Template hint label
+        self.lbl_job_template_hint = QLabel("")
+        self.lbl_job_template_hint.setObjectName("field-hint")
+        self.lbl_job_template_hint.setWordWrap(True)
+        job_layout.addWidget(self.lbl_job_template_hint)
+
+        # Custom markers widget
+        self.custom_markers_widget = QWidget()
+        self.custom_markers_widget.setVisible(False)
+        self.custom_markers_widget.setMinimumHeight(125)
+        custom_markers_layout = QVBoxLayout(self.custom_markers_widget)
+        custom_markers_layout.setContentsMargins(0, 4, 0, 0)
+        custom_markers_layout.setSpacing(6)
+
+        start_lbl = QLabel("Start text (required):")
+        start_lbl.setObjectName("template-label")
+        self.txt_job_start_marker = QLineEdit()
+        self.txt_job_start_marker.setObjectName("marker-input")
+        self.txt_job_start_marker.setPlaceholderText("e.g. COMPLETION PROCEDURE")
+
+        end_lbl = QLabel("End text (optional):")
+        end_lbl.setObjectName("template-label")
+        self.txt_job_end_marker = QLineEdit()
+        self.txt_job_end_marker.setObjectName("marker-input")
+        self.txt_job_end_marker.setPlaceholderText("e.g. APPENDIX A")
+
+        custom_markers_layout.addWidget(start_lbl)
+        custom_markers_layout.addWidget(self.txt_job_start_marker)
+        custom_markers_layout.addWidget(end_lbl)
+        custom_markers_layout.addWidget(self.txt_job_end_marker)
+
+        job_layout.addWidget(self.custom_markers_widget)
+
+        self.combo_job_template.currentIndexChanged.connect(self._on_job_template_changed)
+        self._on_job_template_changed()
 
         left_layout.addWidget(job_card)
         left_layout.addStretch()  # Push cards to the top of left column
@@ -340,6 +394,7 @@ class MainWindow(QMainWindow):
         self.lbl_results_summary = QLabel("")
         self.lbl_results_summary.setObjectName("results-summary")
         self.lbl_results_summary.setWordWrap(True)
+        self.lbl_results_summary.setTextFormat(Qt.TextFormat.RichText)
         results_layout.addWidget(self.lbl_results_summary)
 
         results_btn_layout = QHBoxLayout()
@@ -526,6 +581,19 @@ class MainWindow(QMainWindow):
             border-radius: 6px;
             color: #e2e8f0;
             padding: 5px;
+        }
+
+        QLineEdit#marker-input {
+            background-color: #0f131c;
+            border: 1px solid #273043;
+            border-radius: 6px;
+            padding: 5px 10px;
+            color: #e2e8f0;
+            min-height: 28px;
+        }
+
+        QLineEdit#marker-input:focus {
+            border: 1px solid #0ea5e9;
         }
 
         QListWidget::item {
@@ -726,6 +794,12 @@ class MainWindow(QMainWindow):
             self.lbl_job_filename.setText("No file selected")
             self.lbl_job_filename.setStyleSheet("")
 
+    def _on_job_template_changed(self):
+        source = self.combo_job_template.currentData()
+        self.lbl_job_template_hint.setText(self._TEMPLATE_HINTS.get(source, ""))
+        is_custom = source == "custom"
+        self.custom_markers_widget.setVisible(is_custom)
+
     # --- OPERATION ---
 
     def show_status(self, message: str, status_type: str = "info"):
@@ -761,9 +835,15 @@ class MainWindow(QMainWindow):
             )
             return
 
-        # Prepare parameters
         job_order_source = self.combo_job_template.currentData()
-        
+        job_order_start_marker = self.txt_job_start_marker.text().strip()
+        job_order_end_marker = self.txt_job_end_marker.text().strip()
+
+        if has_job and job_order_source == "custom" and not job_order_start_marker:
+            self.show_status("Start text is required when using the Custom template.", "error")
+            return
+
+        # Prepare parameters
         soe_table_names_text = self.txt_soe_table_names.toPlainText()
         soe_table_names_list = [line.strip() for line in soe_table_names_text.split('\n') if line.strip()]
         parsed_table_names = parse_table_names(soe_table_names_list) if has_soe else None
@@ -786,6 +866,8 @@ class MainWindow(QMainWindow):
             soe_entries=self.selected_soe_files if has_soe else None,
             job_order_path=self.job_order_file_path,
             job_order_source=job_order_source,
+            job_order_start_marker=job_order_start_marker,
+            job_order_end_marker=job_order_end_marker,
             soe_table_names=parsed_table_names
         )
         self.worker.finished_signal.connect(self.on_generation_finished)
@@ -800,6 +882,8 @@ class MainWindow(QMainWindow):
         self.btn_choose_job.setEnabled(enabled)
         self.combo_job_template.setEnabled(enabled)
         self.txt_soe_table_names.setEnabled(enabled)
+        self.txt_job_start_marker.setEnabled(enabled)
+        self.txt_job_end_marker.setEnabled(enabled)
 
     def on_generation_finished(self, results: dict, output_path: str):
         # Restore GUI

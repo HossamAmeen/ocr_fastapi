@@ -11,6 +11,11 @@ const customMarkers = document.getElementById("custom-markers");
 const startMarkerInput = document.getElementById("start-marker");
 const endMarkerInput = document.getElementById("end-marker");
 
+const pdfInput = document.getElementById("pdf-file");
+const excelInput = document.getElementById("excel-file");
+const pdfFileNameEl = document.getElementById("pdf-file-name");
+const excelFileNameEl = document.getElementById("excel-file-name");
+
 const TEMPLATE_HINTS = {
   auto:
     "Auto-detect scans the PDF and picks the first matching built-in template.",
@@ -32,6 +37,28 @@ function setStatus(message, type = "info") {
 
 function clearStatus() {
   statusEl.classList.add("hidden");
+}
+
+function showSelectedFile(element, file) {
+  if (!file) {
+    element.textContent = "";
+    element.classList.add("hidden");
+    return;
+  }
+  element.textContent = file.name;
+  element.classList.remove("hidden");
+}
+
+if (pdfInput) {
+  pdfInput.addEventListener("change", () => {
+    showSelectedFile(pdfFileNameEl, pdfInput.files[0]);
+  });
+}
+
+if (excelInput) {
+  excelInput.addEventListener("change", () => {
+    showSelectedFile(excelFileNameEl, excelInput.files[0]);
+  });
 }
 
 function updateTemplateUi() {
@@ -61,6 +88,11 @@ function formatSource(source) {
   return source || "-";
 }
 
+function formatKindBadge(kind) {
+  const k = kind || "text";
+  return `<span class="kind-tag kind-${k}">${k}</span>`;
+}
+
 function renderResults(data) {
   summaryEl.innerHTML = `
     <div class="summary-item">
@@ -86,7 +118,7 @@ function renderResults(data) {
       (line) => `
         <tr>
           <td class="num">${line.line_no || ""}</td>
-          <td class="kind">${line.kind || "text"}</td>
+          <td class="kind">${formatKindBadge(line.kind)}</td>
           <td class="desc">${line.text.replace(/\n/g, "<br>")}</td>
         </tr>
       `
@@ -105,8 +137,8 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   clearStatus();
 
-  const pdfFile = document.getElementById("pdf-file").files[0];
-  const excelFile = document.getElementById("excel-file").files[0];
+  const pdfFile = pdfInput ? pdfInput.files[0] : null;
+  const excelFile = excelInput ? excelInput.files[0] : null;
   const source = sourceSelect.value;
   const startMarker = startMarkerInput.value.trim();
   const endMarker = endMarkerInput.value.trim();

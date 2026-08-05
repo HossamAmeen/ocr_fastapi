@@ -11,6 +11,9 @@ const pdfFolderInput = document.getElementById("pdf-folder");
 const pdfFileList = document.getElementById("pdf-file-list");
 const tableNamesInput = document.getElementById("table-names");
 
+const excelInput = document.getElementById("excel-file");
+const excelFileNameEl = document.getElementById("excel-file-name");
+
 let selectedPdfFiles = [];
 
 function setStatus(message, type = "info") {
@@ -25,6 +28,22 @@ function clearStatus() {
 
 function displayName(file) {
   return file.webkitRelativePath || file.name;
+}
+
+function showSelectedFile(element, file) {
+  if (!file) {
+    element.textContent = "";
+    element.classList.add("hidden");
+    return;
+  }
+  element.textContent = file.name;
+  element.classList.remove("hidden");
+}
+
+if (excelInput) {
+  excelInput.addEventListener("change", () => {
+    showSelectedFile(excelFileNameEl, excelInput.files[0]);
+  });
 }
 
 function collectPdfFiles(fileList) {
@@ -187,7 +206,7 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   clearStatus();
 
-  const excelFile = document.getElementById("excel-file").files[0];
+  const excelFile = excelInput ? excelInput.files[0] : null;
 
   if (!selectedPdfFiles.length || !excelFile) {
     setStatus("Please select at least one PDF (or a folder of PDFs) and an Excel template.", "error");

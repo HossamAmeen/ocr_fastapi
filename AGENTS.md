@@ -15,14 +15,16 @@ router/service/schema/UI page:
 - **Job Order** — `extract_job_order.py`, `excel_job_offer/`
 
 Shared PDF text extraction lives in `pdf_extractor/`.
+Shared Excel workbook utilities live in `excel_utils/` (`workbook_utils.py` contains `find_sheet` and `validate_workbook_sheets` for whitespace-tolerant and case-insensitive sheet matching across all writers).
 
-Web layer (`app/`):
+Web & Desktop layer:
+- `desktop.py` — PyQt6 desktop GUI application (can be compiled to standalone executable)
 - `app/routers/*.py` — FastAPI endpoints per flow (e.g. `job_order.py`)
 - `app/services/*.py` — glue between extractor and Excel writer
 - `app/schemas/*.py` — Pydantic request/response models
 - `app/templates/*.html` + `app/static/js/*.js` — simple vanilla-JS upload UI
   per flow, all read-only result tables (no in-browser editing today)
-- `app/config.py` — `UPLOAD_DIR` / `OUTPUT_DIR` paths
+- `app/config.py` — `UPLOAD_DIR` / `OUTPUT_DIR` paths, `REQUIRED_SHEETS`, `validate_template`
 
 Generated workbooks are written to `outputs/`; uploads are staged in
 `uploads/` and deleted after processing.

@@ -156,6 +156,11 @@ function parseTableNames(rawValue) {
     .filter(Boolean);
 }
 
+function formatKindBadge(kind) {
+  const k = kind || "text";
+  return `<span class="kind-tag kind-${k}">${k}</span>`;
+}
+
 function hideResultBlocks() {
   document.getElementById("proforma-results").classList.add("hidden");
   document.getElementById("soe-results").classList.add("hidden");
@@ -263,7 +268,7 @@ function renderResults(data) {
         (line) => `
           <tr>
             <td class="num">${line.line_no || ""}</td>
-            <td class="kind">${line.kind || "text"}</td>
+            <td class="kind">${formatKindBadge(line.kind)}</td>
             <td class="desc">${line.text.replace(/\n/g, "<br>")}</td>
           </tr>
         `

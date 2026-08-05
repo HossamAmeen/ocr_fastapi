@@ -6,6 +6,11 @@ const summaryEl = document.getElementById("summary");
 const tableBody = document.querySelector("#items-table tbody");
 const downloadLink = document.getElementById("download-link");
 
+const pdfInput = document.getElementById("pdf-file");
+const excelInput = document.getElementById("excel-file");
+const pdfFileNameEl = document.getElementById("pdf-file-name");
+const excelFileNameEl = document.getElementById("excel-file-name");
+
 function formatMoney(value) {
   return Number(value).toLocaleString("en-US", {
     minimumFractionDigits: 2,
@@ -21,6 +26,28 @@ function setStatus(message, type = "info") {
 
 function clearStatus() {
   statusEl.classList.add("hidden");
+}
+
+function showSelectedFile(element, file) {
+  if (!file) {
+    element.textContent = "";
+    element.classList.add("hidden");
+    return;
+  }
+  element.textContent = file.name;
+  element.classList.remove("hidden");
+}
+
+if (pdfInput) {
+  pdfInput.addEventListener("change", () => {
+    showSelectedFile(pdfFileNameEl, pdfInput.files[0]);
+  });
+}
+
+if (excelInput) {
+  excelInput.addEventListener("change", () => {
+    showSelectedFile(excelFileNameEl, excelInput.files[0]);
+  });
 }
 
 function renderResults(data) {
@@ -62,8 +89,8 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   clearStatus();
 
-  const pdfFile = document.getElementById("pdf-file").files[0];
-  const excelFile = document.getElementById("excel-file").files[0];
+  const pdfFile = pdfInput ? pdfInput.files[0] : null;
+  const excelFile = excelInput ? excelInput.files[0] : null;
 
   if (!pdfFile || !excelFile) {
     setStatus("Please select both PDF and Excel files.", "error");

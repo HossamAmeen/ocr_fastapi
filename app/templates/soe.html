@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SOE Time Log Generator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/style.css" />
 </head>
 <body>
@@ -34,11 +37,13 @@
           <div class="field">
             <span>SOE Report PDFs</span>
             <div class="file-actions">
-              <label class="file-button">
+              <label class="file-button file-button-accent">
+                <span class="file-button-icon">📚</span>
                 Select PDF files
                 <input type="file" id="pdf-files" accept=".pdf" multiple hidden />
               </label>
               <label class="file-button secondary">
+                <span class="file-button-icon">📁</span>
                 Select folder
                 <input type="file" id="pdf-folder" webkitdirectory directory multiple hidden />
               </label>
@@ -64,10 +69,17 @@ Operational Time Summary</textarea>
             </p>
           </label>
 
-          <label class="field">
+          <div class="field">
             <span>Excel Template (.xlsm)</span>
-            <input type="file" id="excel-file" name="excel" accept=".xlsm,.xlsx" required />
-          </label>
+            <div class="file-actions">
+              <label class="file-button">
+                <span class="file-button-icon">📄</span>
+                Choose Excel template
+                <input type="file" id="excel-file" name="excel" accept=".xlsm,.xlsx" hidden required />
+              </label>
+            </div>
+            <p id="excel-file-name" class="selected-file hidden"></p>
+          </div>
 
           <button type="submit" id="submit-btn">Generate SOE Workbook</button>
         </form>

@@ -10,7 +10,9 @@ from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
 from openpyxl.worksheet.worksheet import Worksheet
 
-PROFORMA_SHEET = "Proforma"
+from excel_utils.workbook_utils import find_sheet
+
+PROFORMA_SHEET = "Proforma".strip()
 HEADER_ROW = 7
 DATA_START_ROW = 8
 GROSS_VALUE_ROW = 15
@@ -30,7 +32,7 @@ def write_proforma_table(
     output_path = Path(output_path)
 
     wb = load_workbook(input_path, keep_vba=True)
-    ws = wb[PROFORMA_SHEET]
+    ws = find_sheet(wb, PROFORMA_SHEET)
 
     protected = _snapshot_cells(ws, PROTECTED_CELLS)
 

@@ -15,3 +15,17 @@ OUTPUT_DIR = BASE_DIR / "outputs"
 UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 
+REQUIRED_SHEETS = [
+    "JOB ORDER",
+    "SOE",
+    "Proforma",
+]
+
+
+def validate_template(template_path: str | Path) -> None:
+    """Validate that an Excel template workbook contains all required sheets."""
+    from excel_utils.workbook_utils import validate_workbook_sheets
+
+    validate_workbook_sheets(template_path, REQUIRED_SHEETS)
+
+

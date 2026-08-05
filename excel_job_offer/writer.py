@@ -12,7 +12,9 @@ from openpyxl.cell.cell import MergedCell
 from openpyxl.styles import Font, PatternFill, Side
 from openpyxl.worksheet.worksheet import Worksheet
 
-JOB_ORDER_SHEET = "JOB ORDER "
+from excel_utils.workbook_utils import find_sheet
+
+JOB_ORDER_SHEET = "JOB ORDER".strip()
 TEXT_COLUMN = 3  # column C
 NUMBER_COLUMN = 1  # column A
 TEXT_MERGE_END_COLUMN = 12  # column L
@@ -51,9 +53,8 @@ def write_job_offer_table(
 
     keep_vba = input_path.suffix.lower() == ".xlsm"
     wb = load_workbook(input_path, keep_vba=keep_vba)
-    ws = _get_job_order_sheet(wb)
+    ws = find_sheet(wb, JOB_ORDER_SHEET)
     source = str(data.get("source", ""))
-
     write_row = _find_next_row(ws)
     previous_end_row = write_row - 1
     ws.insert_rows(write_row, amount=len(lines))
@@ -75,15 +76,6 @@ def write_job_offer_table(
 
     wb.save(output_path)
     return output_path, len(lines)
-
-
-def _get_job_order_sheet(wb) -> Worksheet:
-    if JOB_ORDER_SHEET not in wb.sheetnames:
-        available = ", ".join(wb.sheetnames)
-        raise ValueError(
-            f"Sheet {JOB_ORDER_SHEET!r} not found in workbook. Available sheets: {available}"
-        )
-    return wb[JOB_ORDER_SHEET]
 
 
 def _prepare_row_values(text: str, source: str) -> tuple[str, str]:

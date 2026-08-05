@@ -13,7 +13,9 @@ from openpyxl.cell.cell import MergedCell
 from openpyxl.styles import Alignment
 from openpyxl.worksheet.worksheet import Worksheet
 
-SOE_SHEET = "SOE"
+from excel_utils.workbook_utils import find_sheet
+
+SOE_SHEET = "SOE".strip()
 DATA_START_ROW = 11
 FOOTER_START_ROW = 60
 TABLE_HEADER_ROW = 10
@@ -50,13 +52,21 @@ def read_template_rig(workbook_path: str | Path) -> str:
             return ""
         sheet_name, col, row = match.group(1), match.group(2), int(match.group(3))
         if sheet_name not in wb.sheetnames:
-            return ""
+            # Try case-insensitive / whitespace-tolerant match
+            target = sheet_name.strip().casefold()
+            matched = next(
+                (n for n in wb.sheetnames if n.strip().casefold() == target), None
+            )
+            if matched is None:
+                return ""
+            sheet_name = matched
         return resolve(wb[sheet_name][f"{col}{row}"].value, depth + 1)
 
     def soe_sheet_rig() -> str:
-        if "SOE" not in wb.sheetnames:
+        try:
+            ws = find_sheet(wb, "SOE")
+        except ValueError:
             return ""
-        ws = wb["SOE"]
         # Common layout: N5="Rig:", R5=value (merged R5:S5)
         for coord in ("R5", "O5", "P5", "Q5"):
             value = resolve(ws[coord].value)
@@ -79,15 +89,19 @@ def read_template_rig(workbook_path: str | Path) -> str:
     if value:
         return value
 
-    if "Master Data" in wb.sheetnames:
-        value = resolve(wb["Master Data"]["E11"].value)
+    try:
+        value = resolve(find_sheet(wb, "Master Data")["E11"].value)
         if value:
             return value
+    except ValueError:
+        pass
 
-    if "MS2" in wb.sheetnames:
-        value = resolve(wb["MS2"]["I8"].value)
+    try:
+        value = resolve(find_sheet(wb, "MS2")["I8"].value)
         if value:
             return value
+    except ValueError:
+        pass
 
     # Fallback to cached calculated values when formulas were evaluated in Excel.
     try:
@@ -95,9 +109,11 @@ def read_template_rig(workbook_path: str | Path) -> str:
     except Exception:
         return ""
     for sheet_name, coord in (("SOE", "R5"), ("Master Data", "E11"), ("MS2", "I8")):
-        if sheet_name not in wb_data.sheetnames:
+        try:
+            ws_data = find_sheet(wb_data, sheet_name)
+        except ValueError:
             continue
-        cached = wb_data[sheet_name][coord].value
+        cached = ws_data[coord].value
         if cached is not None and str(cached).strip():
             return str(cached).strip()
     return ""
@@ -197,7 +213,7 @@ def write_soe_rows(
 
     keep_vba = input_path.suffix.lower() == ".xlsm"
     wb = load_workbook(input_path, keep_vba=keep_vba)
-    ws = wb[SOE_SHEET]
+    ws = find_sheet(wb, SOE_SHEET)
     template_ws = _load_template_sheet(template_path, keep_vba)
 
     footer_row = _find_footer_row(ws)
@@ -243,7 +259,7 @@ def write_soe_table(
 
     keep_vba = input_path.suffix.lower() == ".xlsm"
     wb = load_workbook(input_path, keep_vba=keep_vba)
-    ws = wb[SOE_SHEET]
+    ws = find_sheet(wb, SOE_SHEET)
     template_ws = _load_template_sheet(template_path, keep_vba)
 
     footer_row = _find_footer_row(ws)
@@ -273,11 +289,11 @@ def write_soe_table(
     return output_path, len(rows)
 
 
-def _load_template_sheet(template_path: Path, keep_vba: bool) -> Worksheet:
+def _load_template_sheet(template_path: Path, keep_vba: bool):
     if not template_path.is_file():
         raise FileNotFoundError(f"SOE template not found: {template_path}")
     template_wb = load_workbook(template_path, keep_vba=keep_vba)
-    return template_wb[SOE_SHEET]
+    return find_sheet(template_wb, SOE_SHEET)
 
 
 def _find_footer_row(ws: Worksheet) -> int:

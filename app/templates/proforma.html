@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Proforma Generator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/style.css" />
 </head>
 <body>
@@ -30,15 +33,29 @@
       <section class="card upload-card">
         <h2 class="card-title">Upload files <span class="version-tag">v{{ app_version }}</span></h2>
         <form id="proforma-form">
-          <label class="field">
+          <div class="field">
             <span>Purchase Order PDF</span>
-            <input type="file" id="pdf-file" name="pdf" accept=".pdf" required />
-          </label>
+            <div class="file-actions">
+              <label class="file-button file-button-accent">
+                <span class="file-button-icon">📑</span>
+                Choose Proforma PDF
+                <input type="file" id="pdf-file" name="pdf" accept=".pdf" hidden required />
+              </label>
+            </div>
+            <p id="pdf-file-name" class="selected-file hidden"></p>
+          </div>
 
-          <label class="field">
+          <div class="field">
             <span>Excel Template (.xlsm)</span>
-            <input type="file" id="excel-file" name="excel" accept=".xlsm,.xlsx" required />
-          </label>
+            <div class="file-actions">
+              <label class="file-button">
+                <span class="file-button-icon">📄</span>
+                Choose Excel template
+                <input type="file" id="excel-file" name="excel" accept=".xlsm,.xlsx" hidden required />
+              </label>
+            </div>
+            <p id="excel-file-name" class="selected-file hidden"></p>
+          </div>
 
           <button type="submit" id="submit-btn">Generate Proforma</button>
         </form>
