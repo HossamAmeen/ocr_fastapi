@@ -60,9 +60,36 @@ Generated workbooks are written to `outputs/`; uploads are staged in
     row's text/number above, inserting/deleting rows, etc. causes every step
     formula below to recalculate automatically — no workbook regeneration
     needed.
-  - Verified via LibreOffice headless recalculation (`soffice --headless
-    --convert-to xlsx`) that editing an earlier step number correctly
-    cascades to later rows.
+ - Verified via LibreOffice headless recalculation (`soffice --headless
+ --convert-to xlsx`) that editing an earlier step number correctly
+ cascades to later rows.
+- **Table rows are tagged during extraction, not the writer.** PDFs
+ sometimes contain data tables (parts/torque specs, etc.) introduced by a
+ header line such as `QTY THREAD DESCRIPTION`, `THREAD DESCRIPTION`,
+ `DESCRIPTION FUNCTION`, uppercase `SUB-ASSEMBLY # N`, `SEAL TEST PORT`, or
+ `HOLD POINT` (`_is_table_header_line` in `extract_job_order.py`). Uppercase
+ `SUB-ASSEMBLY` is required — lowercase wrap continuations like
+ `sub-assembly # 2. Fill the tubing.` must stay as step text, not headers.
+ Lines following one of these headers are tagged `is_table=True` until the
+ table's paragraph ends — a blank line in the PDF text, or (as a fallback)
+ a real procedure step line (`_is_procedure_step_line`: dotted steps like
+ `7. M/U` / `10.P/U`, or `x.y` steps). Bare qty digits (`1 4-1/2" ...`) and
+ measurements (`5.91" OD ...`) do **not** end the table. `_NUMBERED_STEP_DOT`
+ uses `(?!\d)` so `5.91"` is never treated as step `5.`. `_merge_wrapped_lines`
+ also refuses to glue table rows onto non-table steps (and vice versa), so
+ broken PDF fragments like `QT`/`Y` from `QTY` cannot flip a step to
+ `is_table=True`. `_extract_section_lines` / `_merge_wrapped_lines` /
+ `_build_result` all carry `(text, is_table)` tuples through, and
+ `_build_result` puts `is_table` on each line dict. `write_job_offer_table`
+ (`excel_job_offer/writer.py`) forces `is_table` lines to kind `"text"` even
+ if they'd otherwise look like a numbered step (e.g. start with a bare
+ digit), so they're appended as plain rows under the previous step number
+ instead of creating a new numbered row.
+- **Job Order text font is fixed to Abadi 12** for every appended row
+ (steps, bullets, notes, sections, text), set explicitly in
+ `_write_formatted_row` (`_FONT_NAME` / `_FONT_SIZE` constants) rather than
+ inherited from the template row's font — only bold/italic/color are kept
+ from the existing cell font.
 
 ## Testing notes
 

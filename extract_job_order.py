@@ -66,16 +66,39 @@ _HEADER_LINE = re.compile(
     r"|^Minimum\s*:"
     r"|^Optimum\s*:"
     r"|^Maximum\s*:"
-    r"|^SUB-ASSEMBLY\b"
-    r"|^SEAL TEST PORT"
-    r"|^HOLD POINT"
-    r"|^DESCRIPTION\s+FUNCTION\b"
+    r"|SEAL TEST PORT"
+    r"|HOLD POINT"
+    r"|DESCRIPTION\s+FUNCTION\b"
     r")$",
     re.IGNORECASE,
 )
 _STEP_LINE = re.compile(r"^\d+(?:\.\d+)+\s+")
 _NUMBERED_STEP = re.compile(r"^\d+\s+")
-_NUMBERED_STEP_DOT = re.compile(r"^\d+\.\s*")
+# Dotted procedure steps like "7. M/U ..." / "10.P/U ..." — require that the
+# character after the first "." is not another digit, so measurements such as
+# '5.91"' are NOT treated as step numbers.
+_NUMBERED_STEP_DOT = re.compile(r"^\d+\.\s*(?!\d)")
+
+# Lines that introduce a data table (parts/torque specs, etc.) rather than a
+# procedure step. Rows following one of these headers are tagged as table
+# rows so the writer appends them as plain text instead of a new numbered
+# procedure step.
+_TABLE_HEADER = re.compile(
+    r"^(?:"
+    r"QTY\s*THREAD\s*DESCRIPTION"
+    r"|THREAD\s*DESCRIPTION"
+    r"|DESCRIPTION\s+FUNCTION"
+    r"|SEAL TEST PORT"
+    r"|HOLD POINT"
+    r")$",
+    re.IGNORECASE,
+)
+# PDF table titles use uppercase "SUB-ASSEMBLY # N". Wrapped step text uses
+# lowercase "sub-assembly # N" and must NOT be treated as a table header
+# (or the continuation line is dropped and later steps lose numbering).
+_SUB_ASSEMBLY_HEADER = re.compile(
+    r"^SUB-ASSEMBLY(?:\s*#\s*\d+)?(?:\s+[^.]+)?$"
+)
 
 
 def _find_section_by_markers(
@@ -211,7 +234,13 @@ def get_template_markers(source: str) -> tuple[str, tuple[str, ...]]:
 
 
 def _is_header_line(line: str) -> bool:
-    return bool(_HEADER_LINE.match(line.strip()))
+    stripped = line.strip()
+    return bool(_HEADER_LINE.match(stripped) or _SUB_ASSEMBLY_HEADER.match(stripped))
+
+
+def _is_table_header_line(line: str) -> bool:
+    stripped = line.strip()
+    return bool(_TABLE_HEADER.match(stripped) or _SUB_ASSEMBLY_HEADER.match(stripped))
 
 
 def _is_new_item(line: str, numbered_steps: bool = False) -> bool:
@@ -227,27 +256,54 @@ def _is_new_item(line: str, numbered_steps: bool = False) -> bool:
     return stripped.startswith(("*", "!", "~", "-", "•", "o "))
 
 
-def _merge_wrapped_lines(lines: list[str], numbered_steps: bool = False) -> list[str]:
-    merged: list[str] = []
-    for line in lines:
-        stripped = line.strip()
+def _is_procedure_step_line(line: str) -> bool:
+    """True for real procedure steps that should end a table block.
+
+    Matches dotted steps ("7. M/U ...", "10.P/U ...") and "x.y ..." steps.
+    Does NOT match bare leading digits ("1 4-1/2\" ...") — those are table
+    quantity rows and must stay inside the table block.
+    """
+    stripped = line.strip()
+    if not stripped:
+        return False
+    if _STEP_LINE.match(stripped):
+        return True
+    if _NUMBERED_STEP_DOT.match(stripped):
+        return True
+    return False
+
+def _merge_wrapped_lines(
+    lines: list[tuple[str, bool]], numbered_steps: bool = False
+) -> list[tuple[str, bool]]:
+    merged: list[tuple[str, bool]] = []
+    for stripped, is_table in lines:
+        stripped = stripped.strip()
         if not stripped:
             continue
         if not merged or _is_new_item(stripped, numbered_steps=numbered_steps):
-            merged.append(stripped)
+            merged.append((stripped, is_table))
             continue
-        merged[-1] = f"{merged[-1]} {stripped}".strip()
+        prev_text, prev_is_table = merged[-1]
+        # Never glue table body onto a procedure step (or the reverse). Broken
+        # PDF headers like "QT" / "Y" from "QTY" must stay in the table block
+        # instead of flipping the previous step to is_table=True.
+        if prev_is_table != is_table:
+            merged.append((stripped, is_table))
+            continue
+        merged[-1] = (f"{prev_text} {stripped}".strip(), prev_is_table)
     return merged
 
 
-def _build_result(pdf_path: Path, source: str, merged_lines: list[str]) -> dict[str, Any]:
+def _build_result(
+    pdf_path: Path, source: str, merged_lines: list[tuple[str, bool]]
+) -> dict[str, Any]:
     return {
         "pdf": str(pdf_path),
         "source": source,
-        "section_title": merged_lines[0] if merged_lines else "",
+        "section_title": merged_lines[0][0] if merged_lines else "",
         "lines": [
-            {"line_no": index, "text": line}
-            for index, line in enumerate(merged_lines, start=1)
+            {"line_no": index, "text": text, "is_table": is_table}
+            for index, (text, is_table) in enumerate(merged_lines, start=1)
         ],
     }
 
@@ -257,9 +313,29 @@ def _extract_section_lines(
     *,
     numbered_steps: bool = False,
     merge_wrapped: bool = True,
-) -> list[str]:
-    raw_lines = [line.strip() for line in section.splitlines() if line.strip()]
-    content_lines = [line for line in raw_lines if not _is_header_line(line)]
+) -> list[tuple[str, bool]]:
+    content_lines: list[tuple[str, bool]] = []
+    in_table = False
+    for raw_line in section.splitlines():
+        line = raw_line.strip()
+        if not line:
+            # A blank line ends the table's paragraph block — content after
+            # it (e.g. the next procedure step) is numbered normally again.
+            in_table = False
+            continue
+        if _is_table_header_line(line):
+            in_table = True
+            continue
+        if _is_header_line(line):
+            continue
+        if in_table and _is_procedure_step_line(line):
+            # A real procedure step ends the table block so only the table
+            # rows stay unnumbered under the previous point — e.g. after
+            # SUB-ASSEMBLY / QTY THREAD DESCRIPTION, "7. M/U ..." and
+            # "9. M/U ..." must become new numbered rows again. Do NOT treat
+            # bare "1 <qty row>" as a step end (that is table body).
+            in_table = False
+        content_lines.append((line, in_table))
     if not merge_wrapped:
         return content_lines
     return _merge_wrapped_lines(content_lines, numbered_steps=numbered_steps)
@@ -280,16 +356,18 @@ def extract_job_order_procedure(pdf_path: str | Path) -> dict[str, Any]:
     return _build_result(pdf_path, "job_order_1c", merged_lines)
 
 
-def _split_running_completion_title(lines: list[str]) -> list[str]:
-    if not lines or not lines[0].startswith("Running Completion"):
+def _split_running_completion_title(
+    lines: list[tuple[str, bool]]
+) -> list[tuple[str, bool]]:
+    if not lines or not lines[0][0].startswith("Running Completion"):
         return lines
 
-    first = lines[0]
+    first, is_table = lines[0]
     if "DS," not in first:
         return lines
 
     title, intro = first.split("DS,", 1)
-    return [title.strip(), f"DS,{intro.strip()}", *lines[1:]]
+    return [(title.strip(), is_table), (f"DS,{intro.strip()}", is_table), *lines[1:]]
 
 
 def extract_running_completion(pdf_path: str | Path) -> dict[str, Any]:

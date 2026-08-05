@@ -37,6 +37,8 @@ _STYLE_TEMPLATE_ROWS = {
 }
 _SECTION_FONT_ROW = 75
 _DEFAULT_ROW_HEIGHT = 15.0
+_FONT_NAME = "Abadi"
+_FONT_SIZE = 12
 
 
 def write_job_offer_table(
@@ -62,7 +64,12 @@ def write_job_offer_table(
     for index, line in enumerate(lines):
         row = write_row + index
         text = str(line.get("text", "")).strip()
+        is_table = bool(line.get("is_table", False))
         kind, col_c = _prepare_row_values(text, source)
+        if is_table and kind == "step":
+            # Table rows (parts/torque specs, etc.) are appended under the
+            # previous step number instead of starting a new numbered row.
+            kind = "text"
         _write_formatted_row(
             ws,
             row,
@@ -162,15 +169,24 @@ def _write_formatted_row(
         ws.cell(row, NUMBER_COLUMN).value = None
     ws.cell(row, TEXT_COLUMN).value = col_c
 
-    if kind == "section":
-        text_cell = ws.cell(row, TEXT_COLUMN)
-        if not isinstance(text_cell, MergedCell):
+    text_cell = ws.cell(row, TEXT_COLUMN)
+    if not isinstance(text_cell, MergedCell):
+        if kind == "section":
             section_font = ws.cell(_SECTION_FONT_ROW, TEXT_COLUMN).font
             text_cell.font = Font(
-                name=section_font.name or "Abadi",
-                size=12,
+                name=_FONT_NAME,
+                size=_FONT_SIZE,
                 bold=True,
                 color=copy(section_font.color),
+            )
+        else:
+            existing = text_cell.font
+            text_cell.font = Font(
+                name=_FONT_NAME,
+                size=_FONT_SIZE,
+                bold=existing.bold,
+                italic=existing.italic,
+                color=copy(existing.color),
             )
 
     _apply_row_background(ws, row)
