@@ -29,6 +29,17 @@ Web & Desktop layer:
 Generated workbooks are written to `outputs/`; uploads are staged in
 `uploads/` and deleted after processing.
 
+## SOE flow specifics (`extract_soe.py`, `excel_soe/writer.py`)
+
+- SOE rows are written to the `"SOE"` sheet table starting at row 11
+  (`DATA_START_ROW`), with Date in column A (merged A:C), Time in D, and
+  Event in column E.
+- **Event is always merged E:R** (`EVENT_COLUMN` → `EVENT_MERGE_END_COLUMN`)
+  for every appended data row. The template's sample layout row often only
+  merges Event to column O; `_copy_table_row_layout` / `_ensure_event_merge`
+  expand that to R to match the header row. Table right-edge borders for
+  Event are applied via `_apply_event_right_border`.
+
 ## Job Order flow specifics (`extract_job_order.py`, `excel_job_offer/writer.py`)
 
 - `extract_job_order_data()` auto-detects (or is told) which of several PDF

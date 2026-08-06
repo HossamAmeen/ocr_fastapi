@@ -131,3 +131,6 @@ coverage.xml
 # PyInstaller
 *.manifest
 *.spec
+
+
+output/

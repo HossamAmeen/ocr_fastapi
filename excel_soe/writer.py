@@ -22,6 +22,8 @@ TABLE_HEADER_ROW = 10
 TABLE_INNER_BORDER_ROW = 12
 TABLE_LAST_DATA_BORDER_ROW = 14
 TABLE_LAST_COL = 19  # column S
+EVENT_COLUMN = 5  # column E
+EVENT_MERGE_END_COLUMN = 18  # column R — Event spans E:R
 DATE_FORMAT = "dd-mmm-yy"
 _FOOTER_MARKER = "CUSTOMER REP"
 _FOOTER_BLOCK_ROWS = 9
@@ -377,7 +379,7 @@ def _apply_table_borders(
     if last_row < first_row:
         return
 
-    border_cols = (1, 4, 5, TABLE_LAST_COL)
+    border_cols = (1, 4, EVENT_COLUMN)
     for row in range(first_row, last_row + 1):
         template_row = (
             TABLE_LAST_DATA_BORDER_ROW
@@ -396,6 +398,7 @@ def _apply_table_borders(
             if isinstance(target, MergedCell):
                 continue
             target.border = copy(source.border)
+        _apply_event_right_border(ws, template_ws, row, template_row)
 
 
 def _update_print_area(ws: Worksheet, last_row: int) -> None:
@@ -484,7 +487,7 @@ def _write_table_row(
     ws.cell(row, 4).value = row_data["time"]
     ws.cell(row, 4).number_format = "General"
 
-    event_cell = ws.cell(row, 5)
+    event_cell = ws.cell(row, EVENT_COLUMN)
     event_cell.value = row_data["event"]
     event_cell.alignment = Alignment(
         wrap_text=True,
@@ -523,12 +526,23 @@ def _copy_table_row_layout(
 
     for merged in template_ws.merged_cells.ranges:
         if merged.min_row == source_row == merged.max_row and merged.max_col <= TABLE_LAST_COL:
+            start_col = merged.min_col
+            end_col = merged.max_col
+            # Template sample rows often merge Event only to O; expand to R.
+            if start_col == EVENT_COLUMN:
+                end_col = EVENT_MERGE_END_COLUMN
+            elif EVENT_COLUMN < start_col <= EVENT_MERGE_END_COLUMN:
+                # Absorbed into the expanded Event merge.
+                continue
             ws.merge_cells(
                 start_row=target_row,
-                start_column=merged.min_col,
+                start_column=start_col,
                 end_row=target_row,
-                end_column=merged.max_col,
+                end_column=end_col,
             )
+
+    # Guarantee Event is E:R even when the template row had no Event merge.
+    _ensure_event_merge(ws, target_row)
 
     for col in range(1, TABLE_LAST_COL + 1):
         source = template_ws.cell(source_row, col)
@@ -607,6 +621,50 @@ def _clear_footer_block(ws: Worksheet, footer_row: int) -> None:
             cell = ws.cell(row, col)
             if not isinstance(cell, MergedCell):
                 cell.value = None
+
+
+def _ensure_event_merge(ws: Worksheet, row: int) -> None:
+    """Merge Event across E:R for a data row (replacing any shorter Event merge)."""
+    for merged in list(ws.merged_cells.ranges):
+        if merged.min_row != row or merged.max_row != row:
+            continue
+        if merged.min_col >= EVENT_COLUMN and merged.min_col <= EVENT_MERGE_END_COLUMN:
+            try:
+                ws.unmerge_cells(str(merged))
+            except KeyError:
+                pass
+    ws.merge_cells(
+        start_row=row,
+        start_column=EVENT_COLUMN,
+        end_row=row,
+        end_column=EVENT_MERGE_END_COLUMN,
+    )
+
+
+def _apply_event_right_border(
+    ws: Worksheet,
+    template_ws: Worksheet,
+    row: int,
+    template_row: int,
+) -> None:
+    """Place the Event box right-edge border on the E:R merge (column R)."""
+    src_right_col = EVENT_COLUMN
+    for merged in template_ws.merged_cells.ranges:
+        if (
+            merged.min_row == template_row == merged.max_row
+            and merged.min_col == EVENT_COLUMN
+        ):
+            src_right_col = merged.max_col
+            break
+
+    source = template_ws.cell(template_row, src_right_col)
+    right = copy(source.border.right)
+
+    event_cell = ws.cell(row, EVENT_COLUMN)
+    if not isinstance(event_cell, MergedCell):
+        border = copy(event_cell.border)
+        border.right = right
+        event_cell.border = border
 
 
 def _merged_top_left_col(ws: Worksheet, row: int, col: int) -> int:
