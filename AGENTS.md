@@ -102,6 +102,30 @@ Generated workbooks are written to `outputs/`; uploads are staged in
  inherited from the template row's font — only bold/italic/color are kept
  from the existing cell font.
 
+## SOE extraction: time always comes from the first column, not the last cell
+
+- The Excel `Time` value for every SOE row (`extract_soe.py`) is always taken
+  from the **first time column** of a row — the `From`/`Start` (or `To`, per
+  `_detect_time_log_time_column`) column at the left of the table, or the
+  `From` column for `Operational Time Summary` tables
+  (`_extract_operational_tables_from_page`) — never from the last
+  (Operation Details / Comment / Event) cell, even if that cell's text
+  happens to contain something that looks like a time.
+- The last cell (Operation Details / Comment / Event text) sometimes has a
+  trailing `OAMN` / `O.A.M.N` / `O,A,M,N` / `O A M N` marker (any mix of
+  separators, case-insensitive) followed by unrelated off-duty/standby text.
+  `_strip_oamn_suffix()` in `extract_soe.py` truncates the cell's text at
+  that marker (marker and everything after it is dropped) and is applied to:
+  `_finalize_entry()` (covers classic Time Log and Job Time Log
+  `operation` text), the `pending_oamn`/`oamn_entries` operation text built
+  while parsing the O.A.M.N. section, and `operation_details` in
+  `_extract_operational_tables_from_page` (Operational Time Summary last
+  column). This is separate from `_OAMN_HEADER` (matches a standalone
+  `O.A.M.N.` title line that starts the O.A.M.N. section) and `_OAMN_RANGE`
+  (parses `HH:MM - HH:MM` rows inside that section) — those already only
+  read time from the leading time range in the line, not from Operation
+  Details text.
+
 ## Testing notes
 
 - No automated test suite exists yet (`find . -iname "test_*.py"` is empty).

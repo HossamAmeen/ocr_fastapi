@@ -23,6 +23,10 @@ _OAMN_RANGE = re.compile(
     re.IGNORECASE,
 )
 _OAMN_HEADER = re.compile(r"^O\.A\.M\.N\.?$", re.IGNORECASE)
+# Matches "OAMN", "O.A.M.N", "O,A,M,N", "O A M N" (any mix of separators)
+# appearing anywhere inside a cell — used to cut off trailing OAMN text that
+# sometimes leaks into the last (Operation Details) column.
+_OAMN_INLINE = re.compile(r"\bO\s*[.,]?\s*A\s*[.,]?\s*M\s*[.,]?\s*N\b\.?", re.IGNORECASE)
 _REPORT_PERIOD = re.compile(
     r"Rpt\. Period:\s*(.+?)\s+to\s+(.+?)(?:\n|$)",
     re.IGNORECASE,
@@ -94,7 +98,7 @@ def _to_float(value: str) -> float:
 def _finalize_entry(entry: dict[str, Any] | None) -> dict[str, Any] | None:
     if not entry:
         return None
-    entry["operation"] = entry["operation"].strip()
+    entry["operation"] = _strip_oamn_suffix(entry["operation"].strip())
     entry["notes"] = [note.strip() for note in entry["notes"] if note.strip()]
     return entry
 
@@ -717,6 +721,7 @@ def _parse_time_log_section(
         oamn_match = _OAMN_RANGE.match(line)
         if oamn_match and in_oamn:
             if pending_oamn:
+                pending_oamn["operation"] = _strip_oamn_suffix(pending_oamn["operation"])
                 oamn_entries.append(pending_oamn)
             pending_oamn = {
                 "from": oamn_match.group(1),
@@ -740,6 +745,7 @@ def _parse_time_log_section(
     if finalized:
         entries.append(finalized)
     if pending_oamn:
+        pending_oamn["operation"] = _strip_oamn_suffix(pending_oamn["operation"])
         oamn_entries.append(pending_oamn)
 
     return entries, oamn_entries
@@ -888,6 +894,19 @@ def _find_table_columns(cells: list[str]) -> tuple[int | None, int | None]:
     return from_col, details_col
 
 
+def _strip_oamn_suffix(text: str) -> str:
+    """Drop an ``OAMN`` marker and everything after it from a cell's text.
+
+    The Operation Details (last) column sometimes has an ``OAMN`` /
+    ``O.A.M.N`` / ``O,A,M,N`` / ``O A M N`` marker followed by unrelated
+    off-duty/standby text that should not be kept with the operation text.
+    """
+    match = _OAMN_INLINE.search(text)
+    if not match:
+        return text.strip()
+    return text[: match.start()].strip()
+
+
 def _extract_report_date_from_text(text: str) -> str:
     match = _REPORT_DATE.search(text)
     return match.group(1).strip() if match else ""
@@ -934,6 +953,7 @@ def _extract_operational_tables_from_page(page: Any) -> tuple[str, list[dict[str
 
             time_from = cells[from_col] if from_col < len(cells) else ""
             operation_details = cells[details_col] if details_col < len(cells) else ""
+            operation_details = _strip_oamn_suffix(operation_details)
             if not _FROM_TIME.match(time_from):
                 break
 
