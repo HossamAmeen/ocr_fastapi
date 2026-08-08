@@ -310,7 +310,10 @@ class MainWindow(QMainWindow):
         soe_hdr.addStretch()
         soe_layout.addLayout(soe_hdr)
 
-        soe_hint = QLabel("One or more SOE PDFs or folder. Matches Rig filter if set in the Excel template.")
+        soe_hint = QLabel(
+            "One or more SOE PDFs or folder. Matches Rig filter if set in the Excel template.\n"
+            "OAMN markers and trailing off-duty text are stripped automatically from Operation Details."
+        )
         soe_hint.setObjectName("field-hint")
         soe_layout.addWidget(soe_hint)
 
@@ -344,9 +347,13 @@ class MainWindow(QMainWindow):
         table_names_hint = QLabel("One table name per line. Only matching tables are extracted.")
         table_names_hint.setObjectName("field-hint")
 
+        event_merge_hint = QLabel("Each SOE row's Event cell automatically spans columns E\u2013R in the output workbook.")
+        event_merge_hint.setObjectName("field-hint")
+
         soe_layout.addWidget(table_names_lbl)
         soe_layout.addWidget(self.txt_soe_table_names)
         soe_layout.addWidget(table_names_hint)
+        soe_layout.addWidget(event_merge_hint)
 
         right_layout.addWidget(soe_card)
 
@@ -924,6 +931,7 @@ class MainWindow(QMainWindow):
                     "  <th align='left'>PDF Filename</th>"
                     "  <th align='left'>Source</th>"
                     "  <th align='left'>Well / Date</th>"
+                    "  <th align='left'>Period</th>"
                     "  <th align='left'>Rig</th>"
                     "  <th align='right'>Rows</th>"
                     "</tr>"
@@ -932,25 +940,43 @@ class MainWindow(QMainWindow):
                     filename = summary.get("filename", "")
                     src = summary.get("source", "")
                     src_display = "Time Log" if src == "time_log" else ("Op Time Summary" if src == "operational_time_summary" else src)
-                    
+
                     well_or_date = summary.get("report_date", "") if src == "operational_time_summary" else summary.get("well_name", "")
                     well_or_date = well_or_date or "-"
-                    
+
+                    # Build period string (from – to)
+                    period_from = summary.get("report_period_from", "") or ""
+                    period_to = summary.get("report_period_to", "") or ""
+                    if period_from and period_to and period_from != period_to:
+                        period = f"{period_from} – {period_to}"
+                    elif period_from:
+                        period = period_from
+                    else:
+                        period = "-"
+
                     rig = summary.get("rig", "") or "-"
-                    
+
                     if summary.get("skipped"):
                         reason = summary.get("skip_reason", "")
-                        status = "Skipped (rig)" if reason == "rig_mismatch" else "Skipped"
+                        if reason == "rig_mismatch":
+                            status = "Skipped (rig mismatch)"
+                        elif reason == "no_matching_table":
+                            status = "Skipped (no table)"
+                        elif reason == "empty_table":
+                            status = "Skipped (empty table)"
+                        else:
+                            status = "Skipped"
                         status_style = "color: #fca5a5; font-weight: bold;"
                     else:
                         status = str(summary.get("row_count", 0))
                         status_style = ""
-                    
+
                     table_html.append(
                         f"<tr style='border-bottom: 1px solid #273043;'>"
                         f"  <td>{filename}</td>"
                         f"  <td>{src_display}</td>"
                         f"  <td>{well_or_date}</td>"
+                        f"  <td>{period}</td>"
                         f"  <td>{rig}</td>"
                         f"  <td align='right' style='{status_style}'>{status}</td>"
                         f"</tr>"
@@ -960,8 +986,14 @@ class MainWindow(QMainWindow):
 
         if "job_order" in results and results["job_order"]:
             jo = results["job_order"]
+            lines_data = jo.get("lines", [])
+            steps = sum(1 for ln in lines_data if ln.get("kind") == "step")
+            others = jo["line_count"] - steps
+            jo_detail = f"{steps} numbered step{'' if steps == 1 else 's'}"
+            if others > 0:
+                jo_detail += f", {others} text/bullet/table row{'' if others == 1 else 's'}"
             summary_lines.append(
-                f"• Job Order: Appended {jo['line_count']} steps ('{jo['source']}')"
+                f"• Job Order: Appended {jo['line_count']} rows — {jo_detail} ('{jo['source']}')"
             )
 
         self.lbl_results_summary.setText("<br>".join(summary_lines))
