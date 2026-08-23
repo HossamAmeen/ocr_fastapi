@@ -297,6 +297,37 @@ body {
   margin-bottom: 0.25rem;
 }
 
+.file-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  list-style: inherit;
+}
+
+.file-list-name {
+  flex: 1;
+  min-width: 0;
+  word-break: break-all;
+}
+
+.file-list-remove {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1.15rem;
+  line-height: 1;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+}
+
+.file-list-remove:hover {
+  color: var(--error);
+  background: var(--error-glow);
+}
+
 /* Fields & Inputs */
 .field {
   display: flex;
@@ -314,6 +345,29 @@ body {
 .field-inline {
   margin-top: 0.75rem;
   margin-bottom: 0;
+}
+
+.radio-group {
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.radio-option {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.92rem;
+  color: var(--text);
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.radio-option input[type="radio"] {
+  accent-color: var(--accent);
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
 }
 
 select, input[type="text"], textarea {

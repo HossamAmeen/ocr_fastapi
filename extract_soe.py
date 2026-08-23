@@ -1039,17 +1039,211 @@ def _wants_operational_time_summary(table_names: list[str] | None) -> bool:
     return _OPERATIONAL_TIME_SUMMARY.casefold() in normalized
 
 
-def extract_soe_data(
+def _flexible_paragraph_token(token: str) -> str:
+    """Turn one title word into a lenient regex fragment for paragraph headings."""
+    bare = token.rstrip(".")
+    if bare.casefold() in ("hr", "hrs"):
+        return r"(?:Hr\.?s?\.?|Hours?)"
+    return re.escape(bare) + r"\.?"
+
+
+def _compile_paragraph_title_pattern(name: str) -> re.Pattern[str]:
+    """Match a paragraph heading on its own line or at the start of a line."""
+    tokens = [part for part in name.split() if part]
+    if not tokens:
+        return re.compile(r"a^")
+    body = r"[\s\-]+".join(_flexible_paragraph_token(token) for token in tokens)
+    return re.compile(
+        rf"^[^\S\n]*({body})(?:[^\S\n]*[:.\-])?(?:[^\S\n]+(.+))?$",
+        re.IGNORECASE | re.MULTILINE,
+    )
+
+
+def _paragraph_title_patterns(table_names: list[str] | None) -> list[re.Pattern[str]]:
+    names = [name.strip() for name in (table_names or []) if name and name.strip()]
+    return [_compile_paragraph_title_pattern(name) for name in names]
+
+
+def _find_paragraph_title(
+    text: str,
+    table_names: list[str] | None,
+) -> tuple[int, int, str] | None:
+    """Return ``(title_start, content_start, title_text)`` for the earliest title hit."""
+    matches: list[tuple[int, int, str]] = []
+    for pattern in _paragraph_title_patterns(table_names):
+        for match in pattern.finditer(text):
+            title = match.group(1).strip()
+            inline = (match.group(2) or "").strip()
+            content_start = match.start(2) if inline else match.end()
+            matches.append((match.start(), content_start, title))
+    if not matches:
+        return None
+    return min(matches, key=lambda item: item[0])
+
+
+def _paragraph_title_hint_lines(text: str, table_names: list[str] | None, *, limit: int = 5) -> list[str]:
+    """Return PDF lines that look like near-miss paragraph titles for error hints."""
+    keywords = {
+        word.casefold()
+        for name in (table_names or [])
+        for word in name.split()
+        if len(word) >= 3
+    }
+    if not keywords:
+        return []
+
+    hints: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or len(stripped) > 120:
+            continue
+        lowered = stripped.casefold()
+        if any(keyword in lowered for keyword in keywords):
+            hints.append(stripped)
+        if len(hints) >= limit:
+            break
+    return hints
+
+
+_PARAGRAPH_SEPARATOR_LINE = re.compile(r"^[\s_\-=~*·.…]{2,}$")
+
+
+def _is_section_heading_line(line: str) -> bool:
+    """True for short label lines such as ``Remarks:`` that begin a new block."""
+    stripped = line.strip()
+    if not stripped.endswith(":"):
+        return False
+    if ". " in stripped or stripped.count(".") > 1:
+        return False
+    label = stripped[:-1].strip()
+    if not label or len(label) > 50:
+        return False
+    if len(label.split()) > 8:
+        return False
+    return True
+
+
+def _capture_paragraph_after_title(text: str, content_start: int) -> str:
+    """Return paragraph body after a title until a separator or next section heading.
+
+    Stops at the first of: blank line (once content has started), a horizontal
+    rule / separator line (``---``, ``___``, etc.), or a short standalone
+    heading line ending with ``:`` (e.g. the next report section — not
+    hard-coded to ``Remarks``).
+    """
+    remainder = text[content_start:]
+    lines: list[str] = []
+    for line in remainder.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            if lines:
+                break
+            continue
+        if _PARAGRAPH_SEPARATOR_LINE.match(stripped):
+            if lines:
+                break
+            continue
+        if lines and _is_section_heading_line(stripped):
+            break
+        lines.append(stripped)
+    return " ".join(lines).strip()
+
+
+def extract_paragraph_summary(
     pdf_path: str | Path,
     *,
     rig_filter: str | None = None,
     table_names: list[str] | None = None,
 ) -> dict[str, Any]:
+    """Extract one paragraph (identified by title) as a single summary row.
+
+    Instead of parsing a structured table, this looks for a title line matching
+    one of ``table_names`` and captures the paragraph text that follows until a
+    blank line, horizontal separator, or the next short section heading (any
+    label ending with ``:``, not hard-coded). Used for the SOE "Summary" mode.
+    """
+    pdf_path = Path(pdf_path)
+    pages = _iter_pdf_page_texts(pdf_path)
+    effective_filter = _effective_rig_page_filter(pages, rig_filter)
+    text, matched_page_indexes = _filter_pages_by_rig(pages, effective_filter)
+
+    empty_result = {
+        "source": "paragraph_summary",
+        "title": "",
+        "content": "",
+        "well_name": "",
+        "rig": "",
+        "report_period_from": "",
+        "report_period_to": "",
+        "skip_reason": "",
+        "matched_pages": [],
+    }
+
+    if effective_filter and not text:
+        full_text = "\n".join(pages)
+        return {
+            **empty_result,
+            "well_name": _WELL_NAME.search(full_text).group(1) if _WELL_NAME.search(full_text) else "",
+            "rig": _extract_rig_from_text(full_text),
+            "skipped_rig_mismatch": True,
+            "skip_reason": "rig_mismatch",
+        }
+
+    if not text:
+        return empty_result
+
+    title_match = _find_paragraph_title(text, table_names)
+    if not title_match:
+        hints = _paragraph_title_hint_lines(text, table_names)
+        return {
+            **empty_result,
+            "well_name": _WELL_NAME.search(text).group(1) if _WELL_NAME.search(text) else "",
+            "rig": _extract_rig_from_text(text),
+            "skip_reason": "no_matching_table",
+            "title_hints": hints,
+            "matched_pages": [index + 1 for index in matched_page_indexes],
+        }
+
+    title_start, content_start, title_text = title_match
+    content = _capture_paragraph_after_title(text, content_start)
+    well, period_from, period_to, rig = _metadata_before(text, title_start)
+    if not rig:
+        rig = _extract_rig_from_text(text)
+    if not well:
+        well_match = _WELL_NAME.search(text)
+        well = well_match.group(1) if well_match else ""
+
+    return {
+        "source": "paragraph_summary",
+        "title": title_text,
+        "content": content,
+        "well_name": well,
+        "rig": rig,
+        "report_period_from": period_from,
+        "report_period_to": period_to,
+        "skip_reason": "" if content else "empty_table",
+        "matched_pages": [index + 1 for index in matched_page_indexes],
+    }
+
+
+def extract_soe_data(
+    pdf_path: str | Path,
+    *,
+    rig_filter: str | None = None,
+    table_names: list[str] | None = None,
+    is_summary: bool = False,
+) -> dict[str, Any]:
     """Extract SOE rows from either Time Log or Operational Time Summary PDFs.
 
     When ``rig_filter`` is provided, only Time Log sections whose ``Rig:``
     value matches that filter (same as the Excel Rig cell) are returned.
+    When ``is_summary`` is true, no table is parsed — instead the paragraph
+    following the title in ``table_names`` is captured as one summary row
+    (see :func:`extract_paragraph_summary`).
     """
+    if is_summary:
+        return extract_paragraph_summary(pdf_path, rig_filter=rig_filter, table_names=table_names)
+
     text = _extract_raw_text(Path(pdf_path))
     if _wants_operational_time_summary(table_names) and "Operational Time Summary" in text:
         return extract_operational_time_summary(pdf_path, rig_filter=rig_filter)

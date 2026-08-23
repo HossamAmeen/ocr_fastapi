@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QFileDialog, QComboBox, QProgressBar,
     QMessageBox, QFrame, QListWidget, QStyle, QSizePolicy, QPlainTextEdit,
-    QLineEdit
+    QLineEdit, QRadioButton, QButtonGroup
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize
 from PyQt6.QtGui import QFont, QIcon
@@ -37,7 +37,8 @@ class WorkerThread(QThread):
         job_order_source: str,
         job_order_start_marker: str = "",
         job_order_end_marker: str = "",
-        soe_table_names: list[str] | None = None
+        soe_table_names: list[str] | None = None,
+        soe_is_summary: bool = False
     ):
         super().__init__()
         self.excel_path = excel_path
@@ -48,6 +49,7 @@ class WorkerThread(QThread):
         self.job_order_start_marker = job_order_start_marker
         self.job_order_end_marker = job_order_end_marker
         self.soe_table_names = soe_table_names
+        self.soe_is_summary = soe_is_summary
 
     def run(self):
         try:
@@ -60,6 +62,7 @@ class WorkerThread(QThread):
                 job_order_start_marker=self.job_order_start_marker,
                 job_order_end_marker=self.job_order_end_marker,
                 soe_table_names=self.soe_table_names,
+                soe_is_summary=self.soe_is_summary,
             )
             self.finished_signal.emit(result_data, str(output_path))
         except Exception as exc:
@@ -335,6 +338,20 @@ class MainWindow(QMainWindow):
         self.list_soe_files.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         soe_layout.addWidget(self.list_soe_files)
 
+        # Extraction mode: Table (structured rows) vs Summary (one paragraph -> one row)
+        mode_lbl = QLabel("Extraction mode:")
+        mode_lbl.setObjectName("template-label")
+        mode_layout = QHBoxLayout()
+        self.radio_soe_mode_table = QRadioButton("Table")
+        self.radio_soe_mode_summary = QRadioButton("Summary (paragraph)")
+        self.radio_soe_mode_table.setChecked(True)
+        self.soe_mode_group = QButtonGroup(self)
+        self.soe_mode_group.addButton(self.radio_soe_mode_table)
+        self.soe_mode_group.addButton(self.radio_soe_mode_summary)
+        mode_layout.addWidget(self.radio_soe_mode_table)
+        mode_layout.addWidget(self.radio_soe_mode_summary)
+        mode_layout.addStretch()
+
         # Table names section
         table_names_lbl = QLabel("Table names to extract:")
         table_names_lbl.setObjectName("template-label")
@@ -346,14 +363,21 @@ class MainWindow(QMainWindow):
         
         table_names_hint = QLabel("One table name per line. Only matching tables are extracted.")
         table_names_hint.setObjectName("field-hint")
+        self.lbl_soe_table_names = table_names_lbl
+        self.lbl_soe_table_names_hint = table_names_hint
 
         event_merge_hint = QLabel("Each SOE row's Event cell automatically spans columns E\u2013R in the output workbook.")
         event_merge_hint.setObjectName("field-hint")
 
+        soe_layout.addWidget(mode_lbl)
+        soe_layout.addLayout(mode_layout)
         soe_layout.addWidget(table_names_lbl)
         soe_layout.addWidget(self.txt_soe_table_names)
         soe_layout.addWidget(table_names_hint)
         soe_layout.addWidget(event_merge_hint)
+
+        self.radio_soe_mode_table.toggled.connect(self._on_soe_mode_changed)
+        self._on_soe_mode_changed()
 
         right_layout.addWidget(soe_card)
 
@@ -801,6 +825,17 @@ class MainWindow(QMainWindow):
             self.lbl_job_filename.setText("No file selected")
             self.lbl_job_filename.setStyleSheet("")
 
+    def _on_soe_mode_changed(self):
+        is_summary = self.radio_soe_mode_summary.isChecked()
+        if is_summary:
+            self.lbl_soe_table_names.setText("Paragraph title:")
+            self.lbl_soe_table_names_hint.setText(
+                "The exact paragraph title as it appears in the PDF. Its content is captured as one Excel row."
+            )
+        else:
+            self.lbl_soe_table_names.setText("Table names to extract:")
+            self.lbl_soe_table_names_hint.setText("One table name per line. Only matching tables are extracted.")
+
     def _on_job_template_changed(self):
         source = self.combo_job_template.currentData()
         self.lbl_job_template_hint.setText(self._TEMPLATE_HINTS.get(source, ""))
@@ -854,6 +889,7 @@ class MainWindow(QMainWindow):
         soe_table_names_text = self.txt_soe_table_names.toPlainText()
         soe_table_names_list = [line.strip() for line in soe_table_names_text.split('\n') if line.strip()]
         parsed_table_names = parse_table_names(soe_table_names_list) if has_soe else None
+        soe_is_summary = self.radio_soe_mode_summary.isChecked()
 
         # Update UI for processing state
         self.btn_generate.setEnabled(False)
@@ -875,7 +911,8 @@ class MainWindow(QMainWindow):
             job_order_source=job_order_source,
             job_order_start_marker=job_order_start_marker,
             job_order_end_marker=job_order_end_marker,
-            soe_table_names=parsed_table_names
+            soe_table_names=parsed_table_names,
+            soe_is_summary=soe_is_summary
         )
         self.worker.finished_signal.connect(self.on_generation_finished)
         self.worker.error_signal.connect(self.on_generation_error)
@@ -889,6 +926,8 @@ class MainWindow(QMainWindow):
         self.btn_choose_job.setEnabled(enabled)
         self.combo_job_template.setEnabled(enabled)
         self.txt_soe_table_names.setEnabled(enabled)
+        self.radio_soe_mode_table.setEnabled(enabled)
+        self.radio_soe_mode_summary.setEnabled(enabled)
         self.txt_job_start_marker.setEnabled(enabled)
         self.txt_job_end_marker.setEnabled(enabled)
 
@@ -939,7 +978,12 @@ class MainWindow(QMainWindow):
                 for summary in summaries:
                     filename = summary.get("filename", "")
                     src = summary.get("source", "")
-                    src_display = "Time Log" if src == "time_log" else ("Op Time Summary" if src == "operational_time_summary" else src)
+                    src_display = (
+                        "Time Log" if src == "time_log"
+                        else "Op Time Summary" if src == "operational_time_summary"
+                        else "Summary (paragraph)" if src == "paragraph_summary"
+                        else src
+                    )
 
                     well_or_date = summary.get("report_date", "") if src == "operational_time_summary" else summary.get("well_name", "")
                     well_or_date = well_or_date or "-"

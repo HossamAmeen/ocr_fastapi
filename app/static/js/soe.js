@@ -10,6 +10,10 @@ const pdfFilesInput = document.getElementById("pdf-files");
 const pdfFolderInput = document.getElementById("pdf-folder");
 const pdfFileList = document.getElementById("pdf-file-list");
 const tableNamesInput = document.getElementById("table-names");
+const tableNamesLabel = document.getElementById("table-names-label");
+const tableNamesHint = document.getElementById("table-names-hint");
+const modeTableInput = document.getElementById("mode-table");
+const modeSummaryInput = document.getElementById("mode-summary");
 
 const excelInput = document.getElementById("excel-file");
 const excelFileNameEl = document.getElementById("excel-file-name");
@@ -65,9 +69,34 @@ function renderSelectedFiles() {
   }
 
   pdfFileList.innerHTML = selectedPdfFiles
-    .map((file) => `<li>${displayName(file)}</li>`)
+    .map(
+      (file, index) => `
+        <li class="file-list-item">
+          <span class="file-list-name">${displayName(file)}</span>
+          <button
+            type="button"
+            class="file-list-remove"
+            data-index="${index}"
+            aria-label="Remove ${displayName(file)}"
+            title="Remove file"
+          >&times;</button>
+        </li>
+      `
+    )
     .join("");
   pdfFileList.classList.remove("hidden");
+}
+
+function removeSelectedPdfFile(index) {
+  if (index < 0 || index >= selectedPdfFiles.length) {
+    return;
+  }
+  selectedPdfFiles.splice(index, 1);
+  if (!selectedPdfFiles.length) {
+    pdfFilesInput.value = "";
+    pdfFolderInput.value = "";
+  }
+  renderSelectedFiles();
 }
 
 function setSelectedPdfFiles(files, sourceInput) {
@@ -91,6 +120,9 @@ function formatSource(source) {
   }
   if (source === "job_time_log") {
     return "Job Time Log";
+  }
+  if (source === "paragraph_summary") {
+    return "Summary (paragraph)";
   }
   return source || "-";
 }
@@ -130,6 +162,41 @@ function parseTableNames(rawValue) {
     .split(/[\n,]+/)
     .map((name) => name.trim())
     .filter(Boolean);
+}
+
+function isSummaryMode() {
+  return Boolean(modeSummaryInput && modeSummaryInput.checked);
+}
+
+function updateModeUi() {
+  if (!tableNamesLabel || !tableNamesHint) {
+    return;
+  }
+  if (isSummaryMode()) {
+    tableNamesLabel.textContent = "Paragraph title (used as the row's title)";
+    tableNamesHint.textContent =
+      "The exact paragraph title as it appears in the PDF. Its content is captured as one Excel row.";
+    if (
+      tableNamesInput &&
+      /Time Log|Job Time Log|Operational Time Summary/.test(tableNamesInput.value)
+    ) {
+      tableNamesInput.value = "";
+      tableNamesInput.placeholder = "24 Hrs Summary";
+    }
+  } else {
+    tableNamesLabel.textContent = "Table names to extract";
+    tableNamesHint.textContent =
+      "One table name per line (or comma-separated). Only matching PDF tables are extracted.";
+    if (tableNamesInput && !tableNamesInput.value.trim()) {
+      tableNamesInput.placeholder = "Time Log\nJob Time Log\nOperational Time Summary";
+    }
+  }
+}
+
+if (modeTableInput && modeSummaryInput) {
+  modeTableInput.addEventListener("change", updateModeUi);
+  modeSummaryInput.addEventListener("change", updateModeUi);
+  updateModeUi();
 }
 
 function renderResults(data) {
@@ -202,6 +269,16 @@ pdfFolderInput.addEventListener("change", () => {
   clearStatus();
 });
 
+if (pdfFileList) {
+  pdfFileList.addEventListener("click", (event) => {
+    const button = event.target.closest(".file-list-remove");
+    if (!button) {
+      return;
+    }
+    removeSelectedPdfFile(Number(button.dataset.index));
+  });
+}
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   clearStatus();
@@ -221,6 +298,8 @@ form.addEventListener("submit", async (event) => {
   parseTableNames(tableNamesInput.value).forEach((name) => {
     formData.append("table_names", name);
   });
+  formData.append("is_summary", isSummaryMode() ? "true" : "false");
+  formData.append("extraction_mode", isSummaryMode() ? "summary" : "table");
   formData.append("excel", excelFile);
 
   submitBtn.disabled = true;

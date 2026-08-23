@@ -13,6 +13,7 @@ from extract_performa import extract_proforma_items
 from extract_soe import extract_soe_data
 
 from app.config import OUTPUT_DIR
+from app.services.extraction_errors import format_extraction_error
 from app.services.soe_service import _build_no_rows_error, _pdf_summary
 
 
@@ -32,6 +33,7 @@ def process_combined(
     job_order_start_marker: str = "",
     job_order_end_marker: str = "",
     soe_table_names: list[str] | None = None,
+    soe_is_summary: bool = False,
 ) -> tuple[dict, Path]:
     """Extract selected PDFs and write all sections into one Excel workbook."""
     if not proforma_pdf and not soe_pdfs and not job_order_pdf:
@@ -49,10 +51,20 @@ def process_combined(
         items = extract_proforma_items(proforma_pdf)
         if not items:
             output_path.unlink(missing_ok=True)
-            raise ValueError("No Proforma line items found in the uploaded PDF.")
+            raise ValueError(
+                format_extraction_error(
+                    "Proforma",
+                    [
+                        "Cause: No Proforma line items were found in the uploaded PDF.",
+                        "",
+                        "Solution:",
+                        "• Ensure the uploaded file is a valid Proforma Purchase Order PDF containing price items.",
+                    ],
+                )
+            )
 
         for index, item in enumerate(items, start=1):
-            item.setdefault("sno", index)
+            item["sno"] = index
             item["total"] = item["per_day_rate"] * item["days"]
 
         write_proforma_table(output_path, output_path, items)
@@ -79,19 +91,29 @@ def process_combined(
                 pdf_path,
                 rig_filter=rig_filter,
                 table_names=normalized_table_names,
+                is_summary=soe_is_summary,
             )
             rows = soe_data_to_rows(data)
             if not rows:
-                pdf_summaries.append(_pdf_summary(data, display_name, 0, True))
+                pdf_summaries.append(
+                    _pdf_summary(data, display_name, 0, True, is_summary=soe_is_summary)
+                )
                 continue
 
-            pdf_summaries.append(_pdf_summary(data, display_name, len(rows), False))
+            pdf_summaries.append(
+                _pdf_summary(data, display_name, len(rows), False, is_summary=soe_is_summary)
+            )
             all_row_data.extend(rows)
 
         if not all_row_data:
             output_path.unlink(missing_ok=True)
             raise ValueError(
-                _build_no_rows_error(pdf_summaries, rig_filter, normalized_table_names)
+                _build_no_rows_error(
+                    pdf_summaries,
+                    rig_filter,
+                    normalized_table_names,
+                    is_summary=soe_is_summary,
+                )
             )
 
         sorted_rows = sort_soe_rows(all_row_data)
@@ -130,10 +152,28 @@ def process_combined(
             output_path.unlink(missing_ok=True)
             if job_order_source == "custom":
                 raise ValueError(
-                    f"No procedure content found starting at {job_order_start_marker!r}. "
-                    "Check that the start text matches the PDF exactly."
+                    format_extraction_error(
+                        "Job Order",
+                        [
+                            f"Cause: No procedure content found starting at {job_order_start_marker!r}.",
+                            "",
+                            "Solution:",
+                            "• Check that the start text matches the PDF exactly.",
+                        ],
+                    )
                 )
-            raise ValueError("No completion procedure content found in the Job Order PDF.")
+            raise ValueError(
+                format_extraction_error(
+                    "Job Order",
+                    [
+                        "Cause: No completion procedure content was found in the uploaded PDF.",
+                        "",
+                        "Solution:",
+                        "• Ensure the PDF contains readable completion procedure text.",
+                        "• Try a different extraction template if the PDF layout differs.",
+                    ],
+                )
+            )
 
         _, appended_rows = write_job_offer_table(output_path, output_path, data)
         processed_sections.append("job_order")

@@ -7,6 +7,7 @@ from excel_proforma.writer import write_proforma_table
 from extract_performa import extract_proforma_items
 
 from app.config import OUTPUT_DIR
+from app.services.extraction_errors import format_extraction_error
 
 
 def process_proforma(pdf_path: Path, template_path: Path) -> tuple[list[dict], Path]:
@@ -14,13 +15,19 @@ def process_proforma(pdf_path: Path, template_path: Path) -> tuple[list[dict], P
     items = extract_proforma_items(pdf_path)
     if not items:
         raise ValueError(
-            "Could not extract Proforma line items from the uploaded PDF.\n\n"
-            "Solution:\n"
-            "• Ensure the uploaded file is a valid Proforma Purchase Order PDF containing price items."
+            format_extraction_error(
+                "Proforma",
+                [
+                    "Cause: No Proforma line items were found in the uploaded PDF.",
+                    "",
+                    "Solution:",
+                    "• Ensure the uploaded file is a valid Proforma Purchase Order PDF containing price items.",
+                ],
+            )
         )
 
     for index, item in enumerate(items, start=1):
-        item.setdefault("sno", index)
+        item["sno"] = index
         item["total"] = item["per_day_rate"] * item["days"]
 
     output_name = f"proforma_{uuid.uuid4().hex[:8]}.xlsm"

@@ -188,10 +188,30 @@ def operational_summary_to_rows(data: dict[str, Any]) -> list[dict[str, str | da
     return rows
 
 
+def paragraph_summary_to_rows(data: dict[str, Any]) -> list[dict[str, str | datetime]]:
+    """Convert extract_paragraph_summary() output into a single SOE table row."""
+    content = str(data.get("content", "")).strip()
+    if not content:
+        return []
+
+    period_from = _parse_report_date(data.get("report_period_from", ""))
+    period_to = _parse_report_date(data.get("report_period_to", "")) or period_from
+
+    return [
+        {
+            "date": period_to or period_from or "",
+            "time": "",
+            "event": content,
+        }
+    ]
+
+
 def soe_data_to_rows(data: dict[str, Any]) -> list[dict[str, str | datetime]]:
     """Convert any supported SOE extraction dict into Excel table rows."""
     if data.get("source") == "operational_time_summary":
         return operational_summary_to_rows(data)
+    if data.get("source") == "paragraph_summary":
+        return paragraph_summary_to_rows(data)
     return time_log_to_rows(data)
 
 

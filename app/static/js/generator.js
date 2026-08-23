@@ -26,6 +26,45 @@ const proformaFileNameEl = document.getElementById("proforma-file-name");
 const jobOrderFileNameEl = document.getElementById("job-order-file-name");
 const soeFileList = document.getElementById("soe-file-list");
 const soeTableNamesInput = document.getElementById("soe-table-names");
+const soeTableNamesLabel = document.getElementById("soe-table-names-label");
+const soeTableNamesHint = document.getElementById("soe-table-names-hint");
+const soeModeTableInput = document.getElementById("soe-mode-table");
+const soeModeSummaryInput = document.getElementById("soe-mode-summary");
+
+function isSoeSummaryMode() {
+  return Boolean(soeModeSummaryInput && soeModeSummaryInput.checked);
+}
+
+function updateSoeModeUi() {
+  if (!soeTableNamesLabel || !soeTableNamesHint) {
+    return;
+  }
+  if (isSoeSummaryMode()) {
+    soeTableNamesLabel.textContent = "Paragraph title (used as the row's title)";
+    soeTableNamesHint.textContent =
+      "The exact paragraph title as it appears in the PDF. Its content is captured as one Excel row.";
+    if (
+      soeTableNamesInput &&
+      /Time Log|Job Time Log|Operational Time Summary/.test(soeTableNamesInput.value)
+    ) {
+      soeTableNamesInput.value = "";
+      soeTableNamesInput.placeholder = "24 Hrs Summary";
+    }
+  } else {
+    soeTableNamesLabel.textContent = "Table names to extract";
+    soeTableNamesHint.textContent =
+      "One table name per line. Rows from all SOE PDFs are sorted by date before writing.";
+    if (soeTableNamesInput && !soeTableNamesInput.value.trim()) {
+      soeTableNamesInput.placeholder = "Time Log\nJob Time Log\nOperational Time Summary";
+    }
+  }
+}
+
+if (soeModeTableInput && soeModeSummaryInput) {
+  soeModeTableInput.addEventListener("change", updateSoeModeUi);
+  soeModeSummaryInput.addEventListener("change", updateSoeModeUi);
+  updateSoeModeUi();
+}
 
 let selectedSoeFiles = [];
 
@@ -79,9 +118,34 @@ function renderSoeFiles() {
   }
 
   soeFileList.innerHTML = selectedSoeFiles
-    .map((file) => `<li>${displayName(file)}</li>`)
+    .map(
+      (file, index) => `
+        <li class="file-list-item">
+          <span class="file-list-name">${displayName(file)}</span>
+          <button
+            type="button"
+            class="file-list-remove"
+            data-index="${index}"
+            aria-label="Remove ${displayName(file)}"
+            title="Remove file"
+          >&times;</button>
+        </li>
+      `
+    )
     .join("");
   soeFileList.classList.remove("hidden");
+}
+
+function removeSelectedSoeFile(index) {
+  if (index < 0 || index >= selectedSoeFiles.length) {
+    return;
+  }
+  selectedSoeFiles.splice(index, 1);
+  if (!selectedSoeFiles.length) {
+    soeFilesInput.value = "";
+    soeFolderInput.value = "";
+  }
+  renderSoeFiles();
 }
 
 function setSelectedSoeFiles(files, sourceInput) {
@@ -100,6 +164,9 @@ function formatSource(source) {
   }
   if (source === "time_log") {
     return "Time Log";
+  }
+  if (source === "paragraph_summary") {
+    return "Summary (paragraph)";
   }
   if (source === "1c") {
     return "1-C procedure";
@@ -311,6 +378,16 @@ soeFolderInput.addEventListener("change", () => {
   clearStatus();
 });
 
+if (soeFileList) {
+  soeFileList.addEventListener("click", (event) => {
+    const button = event.target.closest(".file-list-remove");
+    if (!button) {
+      return;
+    }
+    removeSelectedSoeFile(Number(button.dataset.index));
+  });
+}
+
 jobOrderSourceInput.addEventListener("change", updateJobOrderTemplateUi);
 updateJobOrderTemplateUi();
 
@@ -360,6 +437,8 @@ form.addEventListener("submit", async (event) => {
     parseTableNames(soeTableNamesInput.value).forEach((name) => {
       formData.append("soe_table_names", name);
     });
+    formData.append("soe_is_summary", isSoeSummaryMode() ? "true" : "false");
+    formData.append("soe_extraction_mode", isSoeSummaryMode() ? "summary" : "table");
   }
 
   submitBtn.disabled = true;

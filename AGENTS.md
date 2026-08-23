@@ -29,6 +29,28 @@ Web & Desktop layer:
 Generated workbooks are written to `outputs/`; uploads are staged in
 `uploads/` and deleted after processing.
 
+## Proforma flow specifics (`extract_performa.py`, `excel_proforma/writer.py`)
+
+- `extract_proforma_items()` drops the PDF's first extracted item
+  (`items[1:]`) because it already corresponds to the Excel template's
+  existing first table row (row 8, kept as-is — see below). The
+  `proforma_service.py` / `combined_service.py` callers then renumber
+  `sno` unconditionally (`item["sno"] = index`, not `setdefault`) starting
+  at 1 for the remaining items, matching what actually gets appended to
+  Excel.
+- `write_proforma_table()` never clears or overwrites row 8 (`DATA_START_ROW`)
+  — the template's existing first table row is always kept as-is. Extracted
+  items are appended starting at row 9 (`APPEND_START_ROW =
+  DATA_START_ROW + 1`); `_clear_old_rows` only clears rows from
+  `APPEND_START_ROW + keep_rows` onward.
+- Appended S/No (column A) continues counting from whatever numeric value is
+  already in row 8's A cell (`_existing_first_sno`), not from 1 — so if row 8
+  has `S/No = 1`, the first appended row is `2`, etc. Row style for appended
+  rows is still copied from row 8 as the template row.
+- The Gross Value formula (`F{GROSS_VALUE_ROW}`) always sums from row 8
+  through the last appended row (`=SUM(F8:F<last>)`), so row 8's existing
+  amount is included in the total even when no items are appended.
+
 ## SOE flow specifics (`extract_soe.py`, `excel_soe/writer.py`)
 
 - SOE rows are written to the `"SOE"` sheet table starting at row 11
@@ -101,6 +123,39 @@ Generated workbooks are written to `outputs/`; uploads are staged in
  `_write_formatted_row` (`_FONT_NAME` / `_FONT_SIZE` constants) rather than
  inherited from the template row's font — only bold/italic/color are kept
  from the existing cell font.
+
+## SOE "Summary" extraction mode (paragraph instead of table)
+
+- The SOE flow has two extraction modes, selected via a radio button
+  (`is_summary` on the web form / combined form as `soe_is_summary` / a
+  `QRadioButton` pair on desktop): **Table** (default — parses a structured
+  Time Log / Job Time Log / Operational Time Summary table into many rows)
+  and **Summary (paragraph)**.
+- In Summary mode, `extract_soe_data(..., is_summary=True)` calls
+  `extract_paragraph_summary()` (`extract_soe.py`) instead of any table
+  parser. The "Table names to extract" field is reused as the **paragraph
+  title** — a heading line to search for in the PDF. Matching is more lenient
+  than table titles: optional `.` after words, `Hr`/`Hrs`/`Hours`, optional
+  trailing `:`, and the title may share a line with the paragraph text.
+  Everything from the title onward (same line + following lines) up to the
+  next blank line, horizontal separator (`---` / `___`), or short standalone
+  section heading (any label line ending with `:`, not hard-coded to
+  ``Remarks``) is joined into one string (`_capture_paragraph_after_title`)
+  and returned as `data["content"]` with `data["source"] = "paragraph_summary"`.
+- `paragraph_summary_to_rows()` (`excel_soe/writer.py`) converts that into
+  exactly **one** Excel row: `date` = the report period (from/to, if found
+  near the title), `time` = "" (blank — there is no table time column to
+  read), `event` = the whole paragraph content. Row writing, sorting,
+  Rig-page filtering, and OAMN handling upstream are unaffected — this only
+  changes what counts as "the table" being parsed.
+- If the title isn't found, or is found but has no following paragraph text,
+  the PDF is skipped the same way as a table with no matching rows
+  (`skip_reason = "no_matching_table"` / `"empty_table"`).
+- Extraction errors are prefixed by section: **SOE**, **Proforma**, or
+  **Job Order**. SOE errors also state the active mode (**Table mode** or
+  **Summary (paragraph) mode**). The combined/SOE forms send both
+  `soe_is_summary` / `is_summary` and `soe_extraction_mode` /
+  `extraction_mode` so summary mode is not lost in multipart uploads.
 
 ## SOE extraction: time always comes from the first column, not the last cell
 

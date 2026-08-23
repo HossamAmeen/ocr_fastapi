@@ -70,7 +70,7 @@
               <h3>SOE Time Log</h3>
               <span class="badge badge-optional">Optional</span>
             </div>
-            <p class="field-hint">One or more SOE PDFs, or select a folder of reports.</p>
+            <p class="field-hint">One or more SOE PDFs, or select a folder of reports. Click × to remove a file.</p>
             <div class="file-actions">
               <label class="file-button">
                 <span class="file-button-icon">📚</span>
@@ -84,12 +84,25 @@
               </label>
             </div>
             <ul id="soe-file-list" class="file-list hidden"></ul>
+            <div class="field">
+              <span>Extraction mode</span>
+              <div class="radio-group">
+                <label class="radio-option">
+                  <input type="radio" name="soe-extraction-mode" id="soe-mode-table" value="table" checked />
+                  Table
+                </label>
+                <label class="radio-option">
+                  <input type="radio" name="soe-extraction-mode" id="soe-mode-summary" value="summary" />
+                  Summary (paragraph)
+                </label>
+              </div>
+            </div>
             <label class="field">
-              <span>Table names to extract</span>
+              <span id="soe-table-names-label">Table names to extract</span>
               <textarea id="soe-table-names" rows="3">Time Log
 Job Time Log
 Operational Time Summary</textarea>
-              <p class="field-hint">
+              <p class="field-hint" id="soe-table-names-hint">
                 One table name per line. Rows from all SOE PDFs are sorted by date before writing.
               </p>
             </label>

@@ -15,6 +15,9 @@ from excel_utils.workbook_utils import find_sheet
 PROFORMA_SHEET = "Proforma".strip()
 HEADER_ROW = 7
 DATA_START_ROW = 8
+# Row 8 is the template's existing first table row — it is always kept as-is;
+# extracted items are appended starting from the row right below it.
+APPEND_START_ROW = DATA_START_ROW + 1
 GROSS_VALUE_ROW = 15
 PROTECTED_HEADER_END_ROW = 7
 
@@ -27,7 +30,11 @@ def write_proforma_table(
     output_path: str | Path,
     items: list[dict[str, Any]],
 ) -> Path:
-    """Load xlsm, replace Proforma line items, and save a new workbook."""
+    """Load xlsm, append Proforma line items below the existing first row, and save.
+
+    Row 8 (the template's existing first table row) is never cleared or
+    overwritten; extracted items are appended starting at row 9.
+    """
     input_path = Path(input_path)
     output_path = Path(output_path)
 
@@ -36,7 +43,7 @@ def write_proforma_table(
 
     protected = _snapshot_cells(ws, PROTECTED_CELLS)
 
-    _clear_old_rows(ws, start_row=DATA_START_ROW, keep_rows=len(items))
+    _clear_old_rows(ws, start_row=APPEND_START_ROW, keep_rows=len(items))
     _write_items(ws, items)
     _update_totals(ws, item_count=len(items))
     _restore_cells(ws, protected)
@@ -70,17 +77,27 @@ def _clear_old_rows(ws: Worksheet, start_row: int, keep_rows: int) -> None:
             cell.value = None
 
 
+def _existing_first_sno(ws: Worksheet) -> int:
+    """Return the S/No already in row 8, so appended rows continue counting from it."""
+    value = ws[f"A{DATA_START_ROW}"].value
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _write_items(ws: Worksheet, items: list[dict[str, Any]]) -> None:
     template_row = DATA_START_ROW
+    base_sno = _existing_first_sno(ws)
 
     for index, item in enumerate(items):
-        row = DATA_START_ROW + index
+        row = APPEND_START_ROW + index
         if row >= GROSS_VALUE_ROW:
             break
 
         _copy_row_style(ws, template_row, row)
 
-        ws[f"A{row}"].value = item.get("sno", index + 1)
+        ws[f"A{row}"].value = base_sno + index + 1
         ws[f"B{row}"].value = item["description"]
         ws[f"D{row}"].value = float(item["per_day_rate"])
         ws[f"E{row}"].value = float(item["days"])
@@ -99,10 +116,7 @@ def _copy_row_style(ws: Worksheet, source_row: int, target_row: int) -> None:
 
 
 def _update_totals(ws: Worksheet, item_count: int) -> None:
-    if item_count == 0:
-        ws[f"F{GROSS_VALUE_ROW}"].value = 0
-        return
-
+    """Sum F8 (the retained first row) through the last appended row."""
     first_row = DATA_START_ROW
-    last_row = DATA_START_ROW + item_count - 1
+    last_row = APPEND_START_ROW + item_count - 1 if item_count > 0 else DATA_START_ROW
     ws[f"F{GROSS_VALUE_ROW}"].value = f"=SUM(F{first_row}:F{last_row})"

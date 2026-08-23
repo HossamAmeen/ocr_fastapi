@@ -49,14 +49,32 @@
               </label>
             </div>
             <p class="field-hint">
-              Choose multiple PDFs or an entire folder. All PDFs are extracted and appended into one workbook.
+              Choose multiple PDFs or an entire folder. Click × on a file to remove it from the list.
             </p>
           </div>
 
           <ul id="pdf-file-list" class="file-list hidden"></ul>
 
+          <div class="field">
+            <span>Extraction mode</span>
+            <div class="radio-group">
+              <label class="radio-option">
+                <input type="radio" name="extraction-mode" id="mode-table" value="table" checked />
+                Table
+              </label>
+              <label class="radio-option">
+                <input type="radio" name="extraction-mode" id="mode-summary" value="summary" />
+                Summary (paragraph)
+              </label>
+            </div>
+            <p class="field-hint">
+              Table: parse a structured Time Log / Operational Time Summary table into multiple rows.
+              Summary: find a paragraph by its title and write its full text as one Excel row.
+            </p>
+          </div>
+
           <label class="field">
-            <span>Table names to extract</span>
+            <span id="table-names-label">Table names to extract</span>
             <textarea
               id="table-names"
               rows="3"
@@ -64,7 +82,7 @@
             >Time Log
 Job Time Log
 Operational Time Summary</textarea>
-            <p class="field-hint">
+            <p class="field-hint" id="table-names-hint">
               One table name per line (or comma-separated). Only matching PDF tables are extracted.
             </p>
           </label>

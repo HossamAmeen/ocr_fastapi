@@ -8,6 +8,7 @@ from excel_job_offer.writer import write_job_offer_table, _prepare_row_values
 from extract_job_order import extract_job_order_data
 
 from app.config import OUTPUT_DIR
+from app.services.extraction_errors import format_extraction_error
 
 
 def process_job_order(
@@ -28,10 +29,28 @@ def process_job_order(
     if not data.get("lines"):
         if source == "custom":
             raise ValueError(
-                f"No procedure content found starting at {start_marker!r}. "
-                "Check that the start text matches the PDF exactly."
+                format_extraction_error(
+                    "Job Order",
+                    [
+                        f"Cause: No procedure content found starting at {start_marker!r}.",
+                        "",
+                        "Solution:",
+                        "• Check that the start text matches the PDF exactly.",
+                    ],
+                )
             )
-        raise ValueError("No completion procedure content found in the uploaded PDF.")
+        raise ValueError(
+            format_extraction_error(
+                "Job Order",
+                [
+                    "Cause: No completion procedure content was found in the uploaded PDF.",
+                    "",
+                    "Solution:",
+                    "• Ensure the PDF contains readable completion procedure text.",
+                    "• Try a different extraction template if the PDF layout differs.",
+                ],
+            )
+        )
 
     suffix = template_path.suffix.lower()
     output_name = f"job_order_{uuid.uuid4().hex[:8]}{suffix}"

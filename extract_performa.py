@@ -80,4 +80,7 @@ def extract_proforma_items(pdf_path: str | Path) -> list[dict[str, Any]]:
             )
             pending = None
 
-    return items
+    # The PDF's first item already corresponds to the Excel template's
+    # existing first table row (row 8, kept as-is by write_proforma_table),
+    # so it is dropped here to avoid duplicating it.
+    return items[1:]
