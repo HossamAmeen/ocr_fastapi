@@ -22,7 +22,21 @@ _OAMN_RANGE = re.compile(
     r"^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\s*(?:Hr'?s?)?\s*:?\s*(.*)$",
     re.IGNORECASE,
 )
-_OAMN_HEADER = re.compile(r"^O\.A\.M\.N\.?$", re.IGNORECASE)
+_OAMN_HEADER = re.compile(
+    r"^O\s*[.,]?\s*A\s*[.,]?\s*M\s*[.,]?\s*N\s*\.?:?\s*$",
+    re.IGNORECASE,
+)
+_OAMN_SECTION_END = re.compile(
+    r"^(?:"
+    r"Problem Events\b|"
+    r"Phase Time and Cost Summary\b|"
+    r"Interval Problems\b|"
+    r"Mud Checks\b|"
+    r"Drill Strings\b|"
+    r"Total\b"
+    r")",
+    re.IGNORECASE,
+)
 # Matches "OAMN", "O.A.M.N", "O,A,M,N", "O A M N" (any mix of separators)
 # appearing anywhere inside a cell — used to cut off trailing OAMN text that
 # sometimes leaks into the last (Operation Details) column.
@@ -680,9 +694,12 @@ def _parse_time_log_section(
     pending_notes: list[str] = []
     in_oamn = False
     pending_oamn: dict[str, Any] | None = None
+    oamn_spanned_page_break = False
 
     for line in lines:
         if _is_skippable_time_log_line(line, table_names):
+            if in_oamn and pending_oamn is None:
+                oamn_spanned_page_break = True
             continue
 
         if _OAMN_HEADER.match(line):
@@ -692,12 +709,22 @@ def _parse_time_log_section(
             current = None
             pending_notes = []
             in_oamn = True
+            oamn_spanned_page_break = False
+            continue
+        if in_oamn and _OAMN_SECTION_END.match(line):
+            _append_pending_oamn(pending_oamn, oamn_entries)
+            pending_oamn = None
+            in_oamn = False
             continue
         if line.startswith("="):
             continue
 
         parsed_row = _parse_time_log_row(line, time_column)
         if parsed_row:
+            if in_oamn:
+                _append_pending_oamn(pending_oamn, oamn_entries)
+                pending_oamn = None
+                in_oamn = False
             finalized = _finalize_entry(current)
             if finalized:
                 entries.append(finalized)
@@ -720,9 +747,12 @@ def _parse_time_log_section(
 
         oamn_match = _OAMN_RANGE.match(line)
         if oamn_match and in_oamn:
-            if pending_oamn:
-                pending_oamn["operation"] = _strip_oamn_suffix(pending_oamn["operation"])
-                oamn_entries.append(pending_oamn)
+            if oamn_spanned_page_break and pending_oamn is None:
+                in_oamn = False
+                oamn_spanned_page_break = False
+                continue
+            oamn_spanned_page_break = False
+            _append_pending_oamn(pending_oamn, oamn_entries)
             pending_oamn = {
                 "from": oamn_match.group(1),
                 "to": oamn_match.group(2),
@@ -744,9 +774,7 @@ def _parse_time_log_section(
     finalized = _finalize_entry(current)
     if finalized:
         entries.append(finalized)
-    if pending_oamn:
-        pending_oamn["operation"] = _strip_oamn_suffix(pending_oamn["operation"])
-        oamn_entries.append(pending_oamn)
+    _append_pending_oamn(pending_oamn, oamn_entries)
 
     return entries, oamn_entries
 
@@ -892,6 +920,16 @@ def _find_table_columns(cells: list[str]) -> tuple[int | None, int | None]:
         if "operation details" in label:
             details_col = index
     return from_col, details_col
+
+
+def _append_pending_oamn(
+    pending_oamn: dict[str, Any] | None,
+    oamn_entries: list[dict[str, Any]],
+) -> None:
+    if not pending_oamn:
+        return
+    pending_oamn["operation"] = _strip_oamn_suffix(pending_oamn["operation"])
+    oamn_entries.append(pending_oamn)
 
 
 def _strip_oamn_suffix(text: str) -> str:

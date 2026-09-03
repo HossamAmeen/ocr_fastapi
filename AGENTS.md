@@ -176,10 +176,17 @@ Generated workbooks are written to `outputs/`; uploads are staged in
   while parsing the O.A.M.N. section, and `operation_details` in
   `_extract_operational_tables_from_page` (Operational Time Summary last
   column). This is separate from `_OAMN_HEADER` (matches a standalone
-  `O.A.M.N.` title line that starts the O.A.M.N. section) and `_OAMN_RANGE`
-  (parses `HH:MM - HH:MM` rows inside that section) — those already only
-  read time from the leading time range in the line, not from Operation
-  Details text.
+  `O.A.M.N.` / `OAMN` / `OAMN:` title line that starts the O.A.M.N.
+  section) and `_OAMN_RANGE` (parses `HH:MM - HH:MM` rows inside that
+  section) — those already only read time from the leading time range in
+  the line, not from Operation Details text. While parsing the O.A.M.N.
+  block, `_OAMN_SECTION_END` stops accumulation at the next major
+  section (e.g. `Problem Events`, `Phase Time and Cost Summary`) so
+  trailing report tables are not appended to the OAMN operation text.
+  When the `O.A.M.N` header is immediately followed by a page break
+  (footer / next-page chrome) before the first `HH:MM - HH:MM` range
+  line, the entire cross-page OAMN continuation is skipped — only
+  same-page OAMN blocks are extracted.
 
 ## Testing notes
 
