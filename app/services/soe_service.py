@@ -248,6 +248,8 @@ def process_soe(
     *,
     table_names: list[str] | None = None,
     is_summary: bool = False,
+    progress_callback: callable | None = None,
+    is_cancelled: callable | None = None,
 ) -> tuple[list[dict], list[dict], Path, int, str]:
     """Extract time logs from multiple PDFs and write them into one Excel workbook.
 
@@ -262,6 +264,9 @@ def process_soe(
     if not pdf_entries:
         raise ValueError("At least one PDF is required.")
 
+    if is_cancelled and is_cancelled():
+        raise InterruptedError("Operation was cancelled by the user.")
+
     pdf_entries = sorted(pdf_entries, key=lambda entry: entry[1].lower())
     rig_filter = read_template_rig(template_path) or None
     normalized_table_names = [
@@ -270,14 +275,17 @@ def process_soe(
         if name and name.strip()
     ] or None
 
-    output_name = f"soe_{uuid.uuid4().hex[:8]}.xlsm"
+    suffix = template_path.suffix.lower()
+    output_name = f"soe_{uuid.uuid4().hex[:8]}{suffix}"
     output_path = OUTPUT_DIR / output_name
     shutil.copy2(template_path, output_path)
 
-    pdf_summaries: list[dict] = []
-    all_row_data: list[dict] = []
+    total_soe_files = len(pdf_entries)
+    extracted_results: list[tuple[int, dict, str, list[dict]]] = []
 
-    for pdf_path, display_name in pdf_entries:
+    def _extract_single(idx: int, pdf_path: Path, display_name: str):
+        if is_cancelled and is_cancelled():
+            return idx, {}, display_name, []
         data = extract_soe_data(
             pdf_path,
             rig_filter=rig_filter,
@@ -285,6 +293,39 @@ def process_soe(
             is_summary=is_summary,
         )
         rows = soe_data_to_rows(data)
+        return idx, data, display_name, rows
+
+    import concurrent.futures
+    max_workers = min(8, max(1, total_soe_files))
+    completed_count = 0
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_idx = {
+            executor.submit(_extract_single, i, p, d): (i, d)
+            for i, (p, d) in enumerate(pdf_entries)
+        }
+        for future in concurrent.futures.as_completed(future_to_idx):
+            if is_cancelled and is_cancelled():
+                executor.shutdown(wait=False, cancel_futures=True)
+                output_path.unlink(missing_ok=True)
+                raise InterruptedError("Operation was cancelled by the user.")
+            idx, data, display_name, rows = future.result()
+            extracted_results.append((idx, data, display_name, rows))
+            completed_count += 1
+            if progress_callback:
+                progress_callback(completed_count, total_soe_files, f"Processed {completed_count}/{total_soe_files}: {display_name}")
+
+    if is_cancelled and is_cancelled():
+        output_path.unlink(missing_ok=True)
+        raise InterruptedError("Operation was cancelled by the user.")
+
+    # Re-sort results back to original document order
+    extracted_results.sort(key=lambda x: x[0])
+
+    pdf_summaries: list[dict] = []
+    all_row_data: list[dict] = []
+
+    for _, data, display_name, rows in extracted_results:
         if not rows:
             pdf_summaries.append(_pdf_summary(data, display_name, 0, True, is_summary=is_summary))
             continue

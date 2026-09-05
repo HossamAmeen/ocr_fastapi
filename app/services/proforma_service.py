@@ -30,7 +30,8 @@ def process_proforma(pdf_path: Path, template_path: Path) -> tuple[list[dict], P
         item["sno"] = index
         item["total"] = item["per_day_rate"] * item["days"]
 
-    output_name = f"proforma_{uuid.uuid4().hex[:8]}.xlsm"
+    suffix = template_path.suffix.lower()
+    output_name = f"proforma_{uuid.uuid4().hex[:8]}{suffix}"
     output_path = OUTPUT_DIR / output_name
     write_proforma_table(template_path, output_path, items)
     return items, output_path

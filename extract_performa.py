@@ -34,7 +34,13 @@ def _is_number(value: object) -> bool:
 
 
 def _to_float(value: object) -> float:
-    return float(str(value).replace(",", ""))
+    if value is None:
+        return 0.0
+    text = str(value).replace(",", "").strip()
+    try:
+        return float(text)
+    except ValueError:
+        return 0.0
 
 
 def extract_proforma_items(pdf_path: str | Path) -> list[dict[str, Any]]:

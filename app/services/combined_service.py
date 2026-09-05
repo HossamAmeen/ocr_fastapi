@@ -34,6 +34,8 @@ def process_combined(
     job_order_end_marker: str = "",
     soe_table_names: list[str] | None = None,
     soe_is_summary: bool = False,
+    progress_callback: callable | None = None,
+    is_cancelled: callable | None = None,
 ) -> tuple[dict, Path]:
     """Extract selected PDFs and write all sections into one Excel workbook."""
     if not proforma_pdf and not soe_pdfs and not job_order_pdf:
@@ -48,6 +50,11 @@ def process_combined(
     result: dict = {"processed_sections": processed_sections}
 
     if proforma_pdf:
+        if is_cancelled and is_cancelled():
+            output_path.unlink(missing_ok=True)
+            raise InterruptedError("Operation was cancelled by the user.")
+        if progress_callback:
+            progress_callback(0, 1, f"Extracting Proforma: {proforma_pdf.name}")
         items = extract_proforma_items(proforma_pdf)
         if not items:
             output_path.unlink(missing_ok=True)
@@ -76,9 +83,11 @@ def process_combined(
         }
 
     if soe_pdfs:
+        if is_cancelled and is_cancelled():
+            output_path.unlink(missing_ok=True)
+            raise InterruptedError("Operation was cancelled by the user.")
+
         pdf_entries = sorted(soe_pdfs, key=lambda entry: entry[1].lower())
-        pdf_summaries: list[dict] = []
-        all_row_data: list[dict] = []
         rig_filter = read_template_rig(template_path) or None
         normalized_table_names = [
             name.strip()
@@ -86,7 +95,12 @@ def process_combined(
             if name and name.strip()
         ] or None
 
-        for pdf_path, display_name in pdf_entries:
+        total_soe_files = len(pdf_entries)
+        extracted_results: list[tuple[int, dict, str, list[dict]]] = []
+
+        def _extract_single(idx: int, pdf_path: Path, display_name: str):
+            if is_cancelled and is_cancelled():
+                return idx, {}, display_name, []
             data = extract_soe_data(
                 pdf_path,
                 rig_filter=rig_filter,
@@ -94,6 +108,40 @@ def process_combined(
                 is_summary=soe_is_summary,
             )
             rows = soe_data_to_rows(data)
+            return idx, data, display_name, rows
+
+        # Use ThreadPoolExecutor for multi-file parallel extraction
+        import concurrent.futures
+        max_workers = min(8, max(1, total_soe_files))
+        completed_count = 0
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_idx = {
+                executor.submit(_extract_single, i, p, d): (i, d)
+                for i, (p, d) in enumerate(pdf_entries)
+            }
+            for future in concurrent.futures.as_completed(future_to_idx):
+                if is_cancelled and is_cancelled():
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    output_path.unlink(missing_ok=True)
+                    raise InterruptedError("Operation was cancelled by the user.")
+                idx, data, display_name, rows = future.result()
+                extracted_results.append((idx, data, display_name, rows))
+                completed_count += 1
+                if progress_callback:
+                    progress_callback(completed_count, total_soe_files, f"Processed {completed_count}/{total_soe_files}: {display_name}")
+
+        if is_cancelled and is_cancelled():
+            output_path.unlink(missing_ok=True)
+            raise InterruptedError("Operation was cancelled by the user.")
+
+        # Re-sort results back to original document order
+        extracted_results.sort(key=lambda x: x[0])
+
+        pdf_summaries: list[dict] = []
+        all_row_data: list[dict] = []
+
+        for _, data, display_name, rows in extracted_results:
             if not rows:
                 pdf_summaries.append(
                     _pdf_summary(data, display_name, 0, True, is_summary=soe_is_summary)
@@ -142,6 +190,11 @@ def process_combined(
         }
 
     if job_order_pdf:
+        if is_cancelled and is_cancelled():
+            output_path.unlink(missing_ok=True)
+            raise InterruptedError("Operation was cancelled by the user.")
+        if progress_callback:
+            progress_callback(0, 1, f"Extracting Job Order: {job_order_pdf.name}")
         data = extract_job_order_data(
             job_order_pdf,
             source=job_order_source,
